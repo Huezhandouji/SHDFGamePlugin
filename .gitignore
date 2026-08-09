@@ -1,0 +1,33 @@
+# IDE
+.idea/
+*.iml
+.vscode/
+.settings/
+.project
+.classpath
+
+# 构建输出
+build/
+out/
+target/
+bin/
+*.class
+
+# Gradle 缓存
+.gradle/
+
+# 服务器运行文件
+run/
+server/
+logs/
+*.log
+
+# 操作系统
+.DS_Store
+Thumbs.db
+
+# 临时文件
+*.tmp
+*.bak
+*.swp
+local.properties

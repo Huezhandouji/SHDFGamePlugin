@@ -1,0 +1,10 @@
+name: SHDFGamePlugin
+version: '${version}'
+
+main: com.sHDFGamePlugin.SHDFGamePlugin
+paper-plugin-loader: com.sHDFGamePlugin.SHDFGamePluginLoader
+api-version: '1.21.11'
+load: POSTWORLD
+
+depend:
+  - ShadowHunterRolesPlugin
