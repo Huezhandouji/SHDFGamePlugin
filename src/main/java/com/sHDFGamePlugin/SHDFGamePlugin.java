@@ -32,7 +32,6 @@ public final class SHDFGamePlugin extends JavaPlugin {
         getLogger().info("SHDFGamePlugin successfully enabled!");
 
 
-
     }
 
     @Override
