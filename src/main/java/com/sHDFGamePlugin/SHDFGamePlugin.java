@@ -1,5 +1,9 @@
 package com.sHDFGamePlugin;
 
+import com.sHDFGamePlugin.core.GameContext;
+import com.sHDFGamePlugin.core.GameStateMachine;
+import org.bukkit.Bukkit;
+import org.bukkit.entity.Player;
 import org.bukkit.plugin.java.JavaPlugin;
 
 
@@ -9,20 +13,32 @@ public final class SHDFGamePlugin extends JavaPlugin {
 
     @Override
     public void onEnable() {
-        instance = this;
+
+        getLogger().info("SHDFGamePlugin launching...");
 
         if(!checkDependencies()){
             getServer().getPluginManager().disablePlugin(this);
+            getLogger().severe("Failed to launch SHDFGamePlugin.");
             return;
         }
 
+        instance = this;
+
+        GameContext.getInstance().init(this);
+        GameStateMachine.getInstance().start();
+
         saveDefaultConfig();
+
+        getLogger().info("SHDFGamePlugin successfully enabled!");
+
+
 
     }
 
     @Override
     public void onDisable() {
-        // Plugin shutdown logic
+        GameStateMachine.getInstance().shutdown();
+        getLogger().info("ShadowHunterGame disabled!");
     }
 
     private boolean checkDependencies(){
