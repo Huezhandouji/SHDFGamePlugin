@@ -37,6 +37,10 @@ public class InteractionManager implements Listener {
         plugin.getServer().getPluginManager().registerEvents(this, plugin);
     }
 
+    public GameItem getGameItemById(String id) {
+        return gameItemSet.get(id);
+    }
+
     public void registerGameItem(String id, GameItem gameItem){
         if(id == null || gameItem == null) return;
         gameItemSet.put(id, gameItem);

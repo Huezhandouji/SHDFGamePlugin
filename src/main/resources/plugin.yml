@@ -8,3 +8,9 @@ load: POSTWORLD
 
 depend:
   - ShadowHunterRolesPlugin
+
+commands:
+  shdf:
+    description: "游戏主命令"
+    usage: "/game <join|leave|ready|side|status>"
+    permission: "shadowhunter.game.player"

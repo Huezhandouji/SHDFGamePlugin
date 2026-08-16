@@ -1,7 +1,9 @@
 package com.sHDFGamePlugin;
 
+import com.sHDFGamePlugin.command.ACommand;
 import com.sHDFGamePlugin.core.GameContext;
 import com.sHDFGamePlugin.core.GameStateMachine;
+import com.sHDFGamePlugin.infrastructure.item.InteractionManager;
 import org.bukkit.Bukkit;
 import org.bukkit.entity.Player;
 import org.bukkit.plugin.java.JavaPlugin;
@@ -30,6 +32,10 @@ public final class SHDFGamePlugin extends JavaPlugin {
         saveDefaultConfig();
 
         getLogger().info("SHDFGamePlugin successfully enabled!");
+
+        Bukkit.getPluginManager().registerEvents(InteractionManager.getInstance(), this);
+
+        getCommand("shdf").setExecutor(new ACommand());
 
 
     }

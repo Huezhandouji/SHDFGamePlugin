@@ -6,21 +6,21 @@ import java.util.List;
 import java.util.Map;
 import java.util.function.Consumer;
 
-public class GameEventBus {
+public final class GameEventBus {
 
     private static final Map<Class<?>, List<Consumer<Object>>> listeners = new HashMap<>();
 
     private GameEventBus() {}
 
     @SuppressWarnings("unchecked")
-    public <T> Subscription subscribe(Class<T> eventType, Consumer<T> handler) {
+    public static <T> Subscription subscribe(Class<T> eventType, Consumer<T> handler) {
         List<Consumer<Object>> list = listeners.computeIfAbsent(eventType, k -> new ArrayList<>());
         Consumer<Object> h = (Consumer<Object>) handler;
         list.add(h);
         return new Subscription(eventType, h);
     }
 
-    private void unsubscribe(Class<?> eventType, Consumer<Object> handler) {
+    private static void unsubscribe(Class<?> eventType, Consumer<Object> handler) {
         List<Consumer<Object>> list = listeners.get(eventType);
         if (list == null) return;
         list.remove(handler);
@@ -29,7 +29,7 @@ public class GameEventBus {
         }
     }
 
-    public <T> void publish(T event) {
+    public static  <T> void publish(T event) {
         List<Consumer<Object>> handlers = listeners.get(event.getClass());
         if (handlers == null) return;
         for (Consumer<Object> handler : handlers) {
@@ -37,11 +37,11 @@ public class GameEventBus {
         }
     }
 
-    public void unsubscribeAll() {
+    public static void unsubscribeAll() {
         listeners.clear();
     }
 
-    public class Subscription {
+    public static class Subscription {
         private final Class<?> eventType;
         private final Consumer<Object> handler;
         private boolean isUnsubscribed = false;
@@ -53,7 +53,7 @@ public class GameEventBus {
 
         public void unsubscribe() {
             if (!isUnsubscribed) {
-                GameEventBus.this.unsubscribe(eventType, handler);
+                GameEventBus.unsubscribe(eventType, handler);
                 isUnsubscribed = true;
             }
         }

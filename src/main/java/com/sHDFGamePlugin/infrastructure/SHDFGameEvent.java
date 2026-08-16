@@ -1,6 +1,6 @@
 package com.sHDFGamePlugin.infrastructure;
 
-public abstract class GameEvent{
+public abstract class SHDFGameEvent {
 
 
 }
