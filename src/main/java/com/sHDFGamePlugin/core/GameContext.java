@@ -1,6 +1,6 @@
 package com.sHDFGamePlugin.core;
 
-import com.sHDFGamePlugin.infrastructure.config.ConfigManager;
+import com.sHDFGamePlugin.infrastructure.ConfigManager;
 import org.bukkit.plugin.java.JavaPlugin;
 
 public class GameContext {
