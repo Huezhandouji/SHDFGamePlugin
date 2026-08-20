@@ -1,0 +1,26 @@
+# ====== 准备阶段配置 ======
+waiting:
+  # 双方最少人数
+  min_population_per_side: 2
+  # 双方最大人数差
+  max_side_diff: 1
+  # 全局最大人数（含观战者）
+  max_population: 16
+  # 玩家加入后是否默认为观战者
+  # true: 加入后为观战者，需手动选队
+  # false: 加入后为 UNKNOWN，等待分配
+  default_side_after_join_spectator_or_unknown: true
+  # 是否需要全部玩家准备才能开始
+  require_ready: true
+
+# ====== 对局阶段配置 ======
+playing:
+  # 重生后无敌时间（tick），60 = 3秒
+  invulnerability: 60
+  # 是否允许同队选择重复角色
+  allow_duplicate_roles: false
+
+# ====== 可用地图列表 ======
+maps:
+  - "map_crossfire"
+  - "map_dust2"

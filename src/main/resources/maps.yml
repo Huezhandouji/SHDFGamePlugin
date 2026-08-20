@@ -1,0 +1,154 @@
+# ============================================
+# 地图数据文件
+# ============================================
+
+maps:
+  map_crossfire:
+    name: "交叉火力"
+    description: "经典对攻图"
+    icon: "STONE_PRESSURE_PLATE"
+    max_tickets: 100
+    initial_tickets: 100
+    attacker_respawn_time: 100      # 进攻方死亡后重生等待时间（tick）
+    defender_respawn_time: 80       # 防守方死亡后重生等待时间（tick）
+    world: "world"
+
+    roles:
+      attacker:
+        - "assault"
+        - "breacher"
+        - "medic"
+      defender:
+        - "sniper"
+        - "trapper"
+        - "shield"
+
+    objectives:
+      - id: "obj_1"
+        name: "前线哨站"
+        region:                         # 占领区域
+          start: { x: -40.0, y: 60.0, z: 195.0 }
+          end:   { x: -20.0, y: 70.0, z: 205.0 }
+        preheat_time: 40                 # 预热时间（tick）
+        capture_time: 200                # 占领所需时间（tick）
+        ticket_reward: 20                # 占领后奖励票数
+        time_limit: 2400                 # 本据点时限（tick），超时防守方胜
+        attacker_spawn_region:           # 进攻方出生区域
+          start: { x: -35.0, y: 65.0, z: 200.0 }
+          end:   { x: -33.0, y: 67.0, z: 202.0 }
+        defender_spawn_region:           # 防守方出生区域
+          start: { x: -25.0, y: 65.0, z: 200.0 }
+          end:   { x: -23.0, y: 67.0, z: 202.0 }
+        attacker_active_region:          # 进攻方活动范围
+          start: { x: -45.0, y: 60.0, z: 190.0 }
+          end:   { x: -15.0, y: 70.0, z: 210.0 }
+        defender_active_region:          # 防守方活动范围
+          start: { x: -35.0, y: 60.0, z: 195.0 }
+          end:   { x: -25.0, y: 70.0, z: 205.0 }
+
+      - id: "obj_2"
+        name: "中心广场"
+        region:
+          start: { x: -10.0, y: 60.0, z: 195.0 }
+          end:   { x: 10.0, y: 70.0, z: 205.0 }
+        preheat_time: 30
+        capture_time: 180
+        ticket_reward: 25
+        time_limit: 3000
+        attacker_spawn_region:
+          start: { x: -5.0, y: 65.0, z: 200.0 }
+          end:   { x: -3.0, y: 67.0, z: 202.0 }
+        defender_spawn_region:
+          start: { x: 5.0, y: 65.0, z: 200.0 }
+          end:   { x: 7.0, y: 67.0, z: 202.0 }
+        attacker_active_region:
+          start: { x: -20.0, y: 60.0, z: 190.0 }
+          end:   { x: 15.0, y: 70.0, z: 210.0 }
+        defender_active_region:
+          start: { x: -10.0, y: 60.0, z: 195.0 }
+          end:   { x: 10.0, y: 70.0, z: 205.0 }
+
+      - id: "obj_3"
+        name: "核心基地"
+        region:
+          start: { x: 20.0, y: 60.0, z: 195.0 }
+          end:   { x: 40.0, y: 70.0, z: 205.0 }
+        preheat_time: 50
+        capture_time: 250
+        ticket_reward: 30
+        time_limit: 3600
+        attacker_spawn_region:
+          start: { x: 25.0, y: 65.0, z: 200.0 }
+          end:   { x: 27.0, y: 67.0, z: 202.0 }
+        defender_spawn_region:
+          start: { x: 35.0, y: 65.0, z: 200.0 }
+          end:   { x: 37.0, y: 67.0, z: 202.0 }
+        attacker_active_region:
+          start: { x: 15.0, y: 60.0, z: 190.0 }
+          end:   { x: 45.0, y: 70.0, z: 210.0 }
+        defender_active_region:
+          start: { x: 20.0, y: 60.0, z: 195.0 }
+          end:   { x: 40.0, y: 70.0, z: 205.0 }
+
+  map_dust2:
+    name: "沙漠风暴"
+    description: "视野开阔的沙漠战场"
+    icon: "SANDSTONE"
+    max_tickets: 80
+    initial_tickets: 80
+    attacker_respawn_time: 100
+    defender_respawn_time: 80
+    world: "world"
+
+    roles:
+      attacker:
+        - "assault"
+        - "scout"
+      defender:
+        - "sniper"
+        - "trapper"
+
+    objectives:
+      - id: "obj_1"
+        name: "沙漠前哨"
+        region:
+          start: { x: -25.0, y: 60.0, z: 295.0 }
+          end:   { x: -5.0, y: 70.0, z: 305.0 }
+        preheat_time: 40
+        capture_time: 200
+        ticket_reward: 20
+        time_limit: 2400
+        attacker_spawn_region:
+          start: { x: -20.0, y: 65.0, z: 300.0 }
+          end:   { x: -18.0, y: 67.0, z: 302.0 }
+        defender_spawn_region:
+          start: { x: -10.0, y: 65.0, z: 300.0 }
+          end:   { x: -8.0, y: 67.0, z: 302.0 }
+        attacker_active_region:
+          start: { x: -35.0, y: 60.0, z: 285.0 }
+          end:   { x: 0.0, y: 70.0, z: 315.0 }
+        defender_active_region:
+          start: { x: -25.0, y: 60.0, z: 295.0 }
+          end:   { x: -5.0, y: 70.0, z: 305.0 }
+
+      - id: "obj_2"
+        name: "沙漠基地"
+        region:
+          start: { x: 5.0, y: 60.0, z: 295.0 }
+          end:   { x: 25.0, y: 70.0, z: 305.0 }
+        preheat_time: 50
+        capture_time: 250
+        ticket_reward: 30
+        time_limit: 3000
+        attacker_spawn_region:
+          start: { x: 10.0, y: 65.0, z: 300.0 }
+          end:   { x: 12.0, y: 67.0, z: 302.0 }
+        defender_spawn_region:
+          start: { x: 20.0, y: 65.0, z: 300.0 }
+          end:   { x: 22.0, y: 67.0, z: 302.0 }
+        attacker_active_region:
+          start: { x: 0.0, y: 60.0, z: 285.0 }
+          end:   { x: 35.0, y: 70.0, z: 315.0 }
+        defender_active_region:
+          start: { x: 5.0, y: 60.0, z: 295.0 }
+          end:   { x: 25.0, y: 70.0, z: 305.0 }
