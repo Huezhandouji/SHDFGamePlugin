@@ -100,8 +100,15 @@ public class ConfigManager {
             String icon = mapSection.getString("icon", "PAPER");
             int maxTickets = mapSection.getInt("max_tickets", 50);
             int initialTickets = mapSection.getInt("initial_tickets", 100);
+            if(maxTickets < 0 || initialTickets < 0){
+                throw new IllegalStateException("Max and initial number of tickets cannot be nagative!");
+            }
+            if(maxTickets < initialTickets) initialTickets = maxTickets;
             int attackerRespawnTime = mapSection.getInt("attacker_respawn_time", 40);
             int defenderRespawnTime = mapSection.getInt("defender_respawn_time", 80);
+            if(attackerRespawnTime < 0 || defenderRespawnTime < 0){
+                throw new IllegalStateException("Attacker respawn time or defender respawn time cannot be negative!");
+            }
             String world =  mapSection.getString("world", "overworld");
 
             Map<String, List<String>> roles = loadRoles(mapSection);
@@ -151,7 +158,13 @@ public class ConfigManager {
             Region region = parseRegion(sectorSection.getConfigurationSection("region"));
             int preheatTime =  sectorSection.getInt("preheat_time", 40);
             int captureTime =  sectorSection.getInt("capture_time", 200);
+            if(preheatTime < 0 || captureTime < 0){
+                throw new IllegalStateException("Preheat and Capture time cannot be negative!");
+            }
             int timeLimit =   sectorSection.getInt("time_limit", 2400);
+            if(timeLimit < 0){
+                throw new IllegalStateException("Time limit cannot be negative!");
+            }
             int ticketReward = sectorSection.getInt("ticket_reward", 20);
 
             Region attackerSpawn = parseRegion(sectorSection.getConfigurationSection("attacker_spawn_region"));

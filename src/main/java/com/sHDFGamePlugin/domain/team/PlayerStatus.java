@@ -7,11 +7,13 @@ public class PlayerStatus {
     private final UUID uuid;
     private Team team;
     private boolean ready;
+    private boolean inBattle;
 
     public PlayerStatus(UUID uuid, Team team) {
         this.uuid = uuid;
         this.team = team;
         this.ready = false;
+        this.inBattle = false;
     }
 
     public UUID getUuid() {
@@ -32,5 +34,13 @@ public class PlayerStatus {
 
     public void setReady(boolean ready) {
         this.ready = ready;
+    }
+
+    public boolean isInBattle() {
+        return inBattle;
+    }
+
+    public void setInBattle(boolean inBattle) {
+        this.inBattle = inBattle;
     }
 }

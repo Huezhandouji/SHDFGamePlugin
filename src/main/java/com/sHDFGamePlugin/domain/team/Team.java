@@ -5,6 +5,9 @@ public enum Team {
     ATTACKER,
     DEFENDER,
     SPECTATOR,
-    UNKNOWN
+    UNKNOWN;
 
+    public boolean isCombatant() {
+        return this == ATTACKER || this == DEFENDER;
+    }
 }

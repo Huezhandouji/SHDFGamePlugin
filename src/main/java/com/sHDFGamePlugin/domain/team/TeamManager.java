@@ -95,4 +95,8 @@ public class TeamManager {
     public Collection<PlayerStatus> getAllPlayerStatuses(){
         return players.values();
     }
+
+    public PlayerStatus getPlayerStatus(UUID uuid){
+        return players.get(uuid);
+    }
 }
