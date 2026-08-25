@@ -1,15 +1,12 @@
 package com.sHDFGamePlugin;
 
-import com.sHDFGamePlugin.command.ACommand;
 import com.sHDFGamePlugin.core.GameContext;
 import com.sHDFGamePlugin.core.GameStateMachine;
 import com.sHDFGamePlugin.infrastructure.RoleBridge;
 import com.sHDFGamePlugin.infrastructure.item.InteractionManager;
 import com.sHDFGamePlugin.listener.PlayerJoinListener;
 import com.sHDFGamePlugin.listener.PlayerQuitListener;
-import com.shadowHunterRolesPlugin.api.RoleAPI;
 import org.bukkit.Bukkit;
-import org.bukkit.entity.Player;
 import org.bukkit.plugin.java.JavaPlugin;
 
 
@@ -39,8 +36,6 @@ public final class SHDFGamePlugin extends JavaPlugin {
         Bukkit.getPluginManager().registerEvents(InteractionManager.getInstance(), this);
         Bukkit.getPluginManager().registerEvents(new PlayerJoinListener(), this);
         Bukkit.getPluginManager().registerEvents(new PlayerQuitListener(), this);
-
-        getCommand("shdf").setExecutor(new ACommand());
 
         GameContext.getInstance().init(this);
         RoleBridge.getInstance().init();

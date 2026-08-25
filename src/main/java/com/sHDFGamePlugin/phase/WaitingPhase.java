@@ -4,6 +4,7 @@ import com.sHDFGamePlugin.core.GameContext;
 import com.sHDFGamePlugin.core.GameState;
 import com.sHDFGamePlugin.core.GameStateMachine;
 import com.sHDFGamePlugin.domain.spawn.SpawnManager;
+import com.sHDFGamePlugin.domain.team.PlayerStatus;
 import com.sHDFGamePlugin.domain.team.Team;
 import com.sHDFGamePlugin.domain.team.TeamManager;
 import com.sHDFGamePlugin.infrastructure.GameEventBus;
@@ -20,33 +21,30 @@ import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
 import net.kyori.adventure.text.format.TextDecoration;
 import org.bukkit.Bukkit;
+import org.bukkit.Material;
 import org.bukkit.Sound;
 import org.bukkit.entity.Player;
 import org.bukkit.inventory.Inventory;
+import org.bukkit.inventory.ItemStack;
+import org.bukkit.inventory.meta.ItemMeta;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.UUID;
 
 public class WaitingPhase implements GamePhase {
 
     private static final WaitingPhase INSTANCE = new WaitingPhase();
 
+    //GameItem的id
+    private final String teamSelectorId = "gameItem_waitingPhase_teamSelector";
+    private final String readyToggleId = "gameItem_waitingPhase_readyToggle";
+    private final String mapVoteId = "gameItem_waitingPhase_mapVote";
 
-    //物品
-    private GameItem teamSelectorGameItem;
-    private GameItem readyTrueGameItem;
-    private GameItem readyFalseGameItem;
-    private GameItem voteGameItem;
-
-    //物品id
-    private final String TEAM_SELECTOR_ID = GameItemRegistry.ItemId.WAITING_PHASE_TEAM_SELECTOR;
-    private final String READY_TOGGLE_FALSE_ID = GameItemRegistry.ItemId.WAITING_PHASE_READY_TOGGLE_FALSE;
-    private final String READY_TOGGLE_TRUE_ID = GameItemRegistry.ItemId.WAITING_PHASE_READY_TOGGLE_TRUE;
-    private final String MAP_VOTE_ID = GameItemRegistry.ItemId.WAITING_PHASE_MAP_VOTE;
-
-    private final String TEAM_BUTTON_ATTACKER_ID = GameItemRegistry.ItemId.WAITING_PHASE_TEAM_BUTTON_ATTACKER;
-    private final String TEAM_BUTTON_DEFENDER_ID = GameItemRegistry.ItemId.WAITING_PHASE_TEAM_BUTTON_DEFENDER;
-    private final String TEAM_BUTTON_SPECTATOR_ID = GameItemRegistry.ItemId.WAITING_PHASE_TEAM_BUTTON_SPECTATOR;
-    private final String TEAM_BUTTON_UNKNOWN_ID = GameItemRegistry.ItemId.WAITING_PHASE_TEAM_BUTTON_UNKNOWN;
+    private final String teamButtonAttackerId = "gameItem_waitingPhase_teamButtonAttacker";
+    private final String teamButtonDefenderId = "gameItem_waitingPhase_teamButtonDefender";
+    private final String teamButtonSpectatorId = "gameItem_waitingPhase_teamButtonSpectator";
+    private final String teamButtonUnknownId = "gameItem_waitingPhase_teamButtonUnknown";
     //事件订阅
     private GameEventBus.Subscription joinSubscription;
     private GameEventBus.Subscription rightClickSubscription;
@@ -66,7 +64,7 @@ public class WaitingPhase implements GamePhase {
 
     @Override
     public void onEnter() {
-        createWaitingGameItems();
+        registerGameItems();
 
         joinSubscription = GameEventBus.subscribe(ShdfPlayerJoinEvent.class, event -> {
             handlePlayerJoin(event.getPlayer());
@@ -102,11 +100,79 @@ public class WaitingPhase implements GamePhase {
         }
     }
 
-    private void createWaitingGameItems(){
-        teamSelectorGameItem = GameItemRegistry.getGameItem(TEAM_SELECTOR_ID);
-        readyFalseGameItem = GameItemRegistry.getGameItem(READY_TOGGLE_FALSE_ID);
-        readyTrueGameItem = GameItemRegistry.getGameItem(READY_TOGGLE_TRUE_ID);
-        voteGameItem = GameItemRegistry.getGameItem(MAP_VOTE_ID);
+    private void registerGameItems(){
+        //快捷栏物品
+        GameItemRegistry.createAndRegister(
+                teamSelectorId,
+                builder -> {
+                    builder.canDrop(false).canMove(false)
+                            .rightClickHandler(event -> {
+                                GameEventBus.publish(new RightClickGameItemEvent(event.getPlayer(), teamSelectorId));
+                            })
+                            .build();
+                }
+        );
+        GameItemRegistry.createAndRegister(
+                readyToggleId,
+                builder -> {
+                    builder.canDrop(false).canMove(false)
+                            .rightClickHandler(event -> {
+                                GameEventBus.publish(new RightClickGameItemEvent(event.getPlayer(), readyToggleId));
+                            })
+                            .build();
+                }
+        );
+        GameItemRegistry.createAndRegister(
+                mapVoteId,
+                builder -> {
+                    builder.canDrop(false).canMove(false)
+                            .rightClickHandler(event -> {
+                                GameEventBus.publish(new RightClickGameItemEvent(event.getPlayer(), mapVoteId));
+                            })
+                            .build();
+                }
+        );
+        //选队菜单物品
+        GameItemRegistry.createAndRegister(
+                teamButtonAttackerId,
+                builder -> {
+                    builder.canDrop(false).canMove(false)
+                            .inventoryClickHandler(event -> {
+                                GameEventBus.publish(new InventoryClickGameItemEvent((Player)event.getWhoClicked(), teamButtonAttackerId));
+                            })
+                            .build();
+                }
+        );
+        GameItemRegistry.createAndRegister(
+                teamButtonDefenderId,
+                builder -> {
+                    builder.canDrop(false).canMove(false)
+                            .inventoryClickHandler(event -> {
+                                GameEventBus.publish(new InventoryClickGameItemEvent((Player)event.getWhoClicked(), teamButtonDefenderId));
+                            })
+                            .build();
+                }
+        );
+        GameItemRegistry.createAndRegister(
+                teamButtonSpectatorId,
+                builder -> {
+                    builder.canDrop(false).canMove(false)
+                            .inventoryClickHandler(event -> {
+                                GameEventBus.publish(new InventoryClickGameItemEvent((Player)event.getWhoClicked(), teamButtonSpectatorId));
+                            })
+                            .build();
+                }
+        );
+        GameItemRegistry.createAndRegister(
+                teamButtonUnknownId,
+                builder -> {
+                    builder.canDrop(false).canMove(false)
+                            .inventoryClickHandler(event -> {
+                                GameEventBus.publish(new InventoryClickGameItemEvent((Player)event.getWhoClicked(), teamButtonUnknownId));
+                            })
+                            .build();
+                }
+        );
     }
 
     private void handlePlayerJoin(Player player){
@@ -161,7 +227,9 @@ public class WaitingPhase implements GamePhase {
     }
 
     private void updateWaitingGameItems(Player player){
-        Team team = TeamManager.getInstance().getTeam(player.getUniqueId());
+        TeamManager teamManager = TeamManager.getInstance();
+        UUID playerId = player.getUniqueId();
+        Team team = teamManager.getTeam(playerId);
         if(team == null) return;
         boolean isCombatant = team.isCombatant();
 
@@ -171,21 +239,46 @@ public class WaitingPhase implements GamePhase {
             inv.setItem(i, null);
         }
 
-        if(teamSelectorGameItem != null){
-            inv.setItem(0, teamSelectorGameItem.getItemStack().clone());
-        }
+        ItemStack teamSelectorItem = new ItemStack(Material.NETHER_STAR);
+        ItemMeta teamSelectorItemMeta = teamSelectorItem.getItemMeta();
+        teamSelectorItemMeta.displayName(Component.text("选择阵营", NamedTextColor.GOLD, TextDecoration.BOLD));
+        teamSelectorItemMeta = GameItem.applyIdOnItemMeta(teamSelectorId, teamSelectorItemMeta);
+        teamSelectorItem.setItemMeta(teamSelectorItemMeta);
+        inv.setItem(0, teamSelectorItem);
 
         //准备物品发给非观战者
-        if(isCombatant && ConfigManager.getInstance().isRequireReady() && readyFalseGameItem != null){
-            inv.setItem(1, readyFalseGameItem.getItemStack().clone());
-        }
-        else{
-            inv.setItem(1, null);
+        if(isCombatant && ConfigManager.getInstance().isRequireReady()){
+            ItemStack readyItem;
+            if(teamManager.isReady(playerId)){
+                readyItem = new ItemStack(Material.DIAMOND_SWORD);
+                ItemMeta meta = readyItem.getItemMeta();
+                meta.displayName(Component.text("已经准备", NamedTextColor.GREEN, TextDecoration.BOLD));
+                readyItem.setItemMeta(meta);
+            }
+            else{
+                readyItem = new ItemStack(Material.WOODEN_SWORD);
+                ItemMeta meta = readyItem.getItemMeta();
+                meta.displayName(Component.text("尚未准备", NamedTextColor.RED, TextDecoration.BOLD));
+                readyItem.setItemMeta(meta);
+            }
+            ItemMeta meta = readyItem.getItemMeta();
+            meta.lore(List.of(
+                    Component.text("只有所有除了随机和观战阵营的玩家准备后, 游戏才会开始", NamedTextColor.GRAY)
+            ));
+            readyItem = GameItem.applyIdOnItemStack(readyToggleId, readyItem);
+            inv.setItem(1, readyItem);
         }
 
-        if(voteGameItem != null){
-            inv.setItem(2, voteGameItem.getItemStack().clone());
-        }
+        ItemStack mapVoteItem = new ItemStack(Material.PAPER);
+        ItemMeta mapvoteItemMeta = mapVoteItem.getItemMeta();
+        mapvoteItemMeta.displayName(Component.text("票选地图", NamedTextColor.BLUE, TextDecoration.BOLD));
+        mapvoteItemMeta.lore(List.of(
+                Component.text("尚未实现", NamedTextColor.GRAY)
+        ));
+        mapvoteItemMeta = GameItem.applyIdOnItemMeta(mapVoteId, mapvoteItemMeta);
+        mapVoteItem.setItemMeta(mapvoteItemMeta);
+        inv.setItem(2, mapVoteItem);
+
     }
 
     private void handleRightClickGameItem(RightClickGameItemEvent event){
@@ -193,9 +286,9 @@ public class WaitingPhase implements GamePhase {
         Player player = event.getPlayer();
 
         switch (itemId){
-            case TEAM_SELECTOR_ID -> openTeamSelectionGui(player);
-            case READY_TOGGLE_FALSE_ID, READY_TOGGLE_TRUE_ID -> toggleReady(player);
-            case MAP_VOTE_ID -> useMapSelector(player);
+            case teamSelectorId -> openTeamSelectionGui(player);
+            case readyToggleId-> toggleReady(player);
+            case mapVoteId -> useMapSelector(player);
             default -> {
                 GameContext.getInstance().getPlugin().getLogger().warning("Player " + player.getName() + " try to use a GameItem not belonging to WaitingPhase!");
             }
@@ -207,10 +300,10 @@ public class WaitingPhase implements GamePhase {
         Player player = event.getPlayer();
 
         switch (itemId){
-            case TEAM_BUTTON_ATTACKER_ID -> handleTeamSelect(player, Team.ATTACKER);
-            case TEAM_BUTTON_DEFENDER_ID -> handleTeamSelect(player, Team.DEFENDER);
-            case TEAM_BUTTON_SPECTATOR_ID -> handleTeamSelect(player, Team.SPECTATOR);
-            case TEAM_BUTTON_UNKNOWN_ID -> handleTeamSelect(player, Team.UNKNOWN);
+            case teamButtonAttackerId -> handleTeamSelect(player, Team.ATTACKER);
+            case teamButtonDefenderId -> handleTeamSelect(player, Team.DEFENDER);
+            case teamButtonSpectatorId -> handleTeamSelect(player, Team.SPECTATOR);
+            case teamButtonUnknownId -> handleTeamSelect(player, Team.UNKNOWN);
             default -> {
                 //忽略其他物品
             }
@@ -257,13 +350,94 @@ public class WaitingPhase implements GamePhase {
     }
 
     private void openTeamSelectionGui(Player player){
+        ItemStack buttonAttacker = new ItemStack(Material.NETHERITE_SWORD);
+        {
+            ItemMeta meta = buttonAttacker.getItemMeta();
+            meta.displayName(Component.text("进攻方-SHADOW",  NamedTextColor.LIGHT_PURPLE, TextDecoration.BOLD));
+            List<Component> lore = new ArrayList<>();
+            lore.add(Component.text("这个队伍有 " + TeamManager.getInstance().getPlayerCount(Team.ATTACKER) + " 名玩家:", NamedTextColor.GRAY));
+            for(UUID pid : TeamManager.getInstance().getAllPlayersUuidsInTeam(Team.ATTACKER)){
+                Player p = Bukkit.getPlayer(pid);
+                if(p == null){
+                    lore.add(Component.text("#无法通过uuid获取玩家", NamedTextColor.RED));
+                }
+                else{
+                    lore.add(Component.text(p.getName(), NamedTextColor.GRAY));
+                }
+            }
+            meta.lore(lore);
+            meta = GameItem.applyIdOnItemMeta(teamButtonAttackerId, meta);
+            buttonAttacker.setItemMeta(meta);
+        }
+
+        ItemStack buttonDefender = new ItemStack(Material.BEDROCK);
+        {
+            ItemMeta meta = buttonDefender.getItemMeta();
+            meta.displayName(Component.text("防守方-SHADOW",  NamedTextColor.YELLOW, TextDecoration.BOLD));
+            List<Component> lore = new ArrayList<>();
+            lore.add(Component.text("这个队伍有 " + TeamManager.getInstance().getPlayerCount(Team.ATTACKER) + " 名玩家:", NamedTextColor.GRAY));
+            for(UUID pid : TeamManager.getInstance().getAllPlayersUuidsInTeam(Team.DEFENDER)){
+                Player p = Bukkit.getPlayer(pid);
+                if(p == null){
+                    lore.add(Component.text("#无法通过uuid获取玩家", NamedTextColor.RED));
+                }
+                else{
+                    lore.add(Component.text(p.getName(), NamedTextColor.GRAY));
+                }
+            }
+            meta.lore(lore);
+            meta = GameItem.applyIdOnItemMeta(teamButtonDefenderId, meta);
+            buttonDefender.setItemMeta(meta);
+        }
+
+        ItemStack buttonSpectator = new ItemStack(Material.PLAYER_HEAD);
+        {
+            ItemMeta meta = buttonSpectator.getItemMeta();
+            meta.displayName(Component.text("观众",  NamedTextColor.BLUE, TextDecoration.BOLD));
+            List<Component> lore = new ArrayList<>();
+            lore.add(Component.text("对局开始后, 你将以观战者加入!", NamedTextColor.YELLOW, TextDecoration.BOLD));
+            lore.add(Component.text("这个队伍有 " + TeamManager.getInstance().getPlayerCount(Team.ATTACKER) + " 名玩家:", NamedTextColor.GRAY));
+            for(UUID pid : TeamManager.getInstance().getAllPlayersUuidsInTeam(Team.SPECTATOR)){
+                Player p = Bukkit.getPlayer(pid);
+                if(p == null){
+                    lore.add(Component.text("#无法通过uuid获取玩家", NamedTextColor.RED));
+                }
+                else{
+                    lore.add(Component.text(p.getName(), NamedTextColor.GRAY));
+                }
+            }
+            meta.lore(lore);
+            meta = GameItem.applyIdOnItemMeta(teamButtonSpectatorId, meta);
+            buttonSpectator.setItemMeta(meta);
+        }
+
+        ItemStack buttonUnknown = new ItemStack(Material.STRUCTURE_VOID);
+        {
+            ItemMeta meta = buttonUnknown.getItemMeta();
+            meta.displayName(Component.text("随机阵营",  NamedTextColor.GREEN, TextDecoration.BOLD));
+            List<Component> lore = new ArrayList<>();
+            lore.add(Component.text("你将会在游戏开始时被随机分配到进攻方或者防守方!", NamedTextColor.YELLOW, TextDecoration.BOLD));
+            lore.add(Component.text("这个队伍有 " + TeamManager.getInstance().getPlayerCount(Team.ATTACKER) + " 名玩家:", NamedTextColor.GRAY));
+            for(UUID pid : TeamManager.getInstance().getAllPlayersUuidsInTeam(Team.ATTACKER)){
+                Player p = Bukkit.getPlayer(pid);
+                if(p == null){
+                    lore.add(Component.text("#无法通过uuid获取玩家", NamedTextColor.RED));
+                }
+                else{
+                    lore.add(Component.text(p.getName(), NamedTextColor.GRAY));
+                }
+            }
+            meta.lore(lore);
+            meta = GameItem.applyIdOnItemMeta(teamButtonUnknownId, meta);
+            buttonUnknown.setItemMeta(meta);
+        }
         ChestGui gui = ChestGui.Builder.create()
                 .title(Component.text("选择阵营", NamedTextColor.YELLOW).decorate(TextDecoration.BOLD))
                 .rows(1)
-                .setSlot(0, GameItemRegistry.getGameItem(GameItemRegistry.ItemId.WAITING_PHASE_TEAM_BUTTON_ATTACKER))
-                .setSlot(1, GameItemRegistry.getGameItem(GameItemRegistry.ItemId.WAITING_PHASE_TEAM_BUTTON_DEFENDER))
-                .setSlot(2, GameItemRegistry.getGameItem(GameItemRegistry.ItemId.WAITING_PHASE_TEAM_BUTTON_UNKNOWN))
-                .setSlot(3, GameItemRegistry.getGameItem(GameItemRegistry.ItemId.WAITING_PHASE_TEAM_BUTTON_SPECTATOR))
+                .setSlot(0, buttonAttacker)
+                .setSlot(1, buttonDefender)
+                .setSlot(2, buttonSpectator)
+                .setSlot(3, buttonUnknown)
                 .build();
         gui.open(player);
     }
@@ -290,13 +464,10 @@ public class WaitingPhase implements GamePhase {
         ));
 
         Inventory inv = player.getInventory();
-        inv.setItem(1, null);
-        if(newReady == true && readyTrueGameItem != null){
-            inv.setItem(1, readyTrueGameItem.getItemStack().clone());
-        }
-        else if(newReady == false && readyFalseGameItem != null){
-            inv.setItem(1, readyFalseGameItem.getItemStack().clone());
-        }
+
+        player.playSound(player.getLocation(), Sound.UI_BUTTON_CLICK, 1f, 1f);
+
+        updateWaitingGameItems(player);
 
         checkStartConditions();
 

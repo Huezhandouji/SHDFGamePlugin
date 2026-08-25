@@ -97,7 +97,11 @@ public class TeamManager {
     }
 
     public Collection<PlayerStatus> getAllPlayerStatuses(){
-        return players.values();
+        return Collections.unmodifiableCollection(players.values());
+    }
+
+    public Collection<PlayerStatus> getAllPlayerStatusesInTeam(Team team){
+        return players.values().stream().filter(status -> status.getTeam() == team).toList();
     }
 
     public PlayerStatus getPlayerStatus(UUID uuid){

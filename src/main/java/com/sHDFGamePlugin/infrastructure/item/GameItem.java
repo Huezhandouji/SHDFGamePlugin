@@ -26,7 +26,7 @@ public class GameItem {
             SHDFGamePlugin.getInstance(),
             "game_item_id"
     );
-    private final ItemStack itemStack;
+
     private final Map<String, ItemComponent> components = new HashMap<>();
 
     private boolean canDrop = false;
@@ -34,13 +34,26 @@ public class GameItem {
 
     private String id;
 
-    private GameItem(ItemStack itemStack) {
-        this.itemStack = itemStack;
+    private GameItem(String id) {
+        this.id = id;
     }
 
-    public ItemStack getItemStack() {
-        return itemStack.clone();
+
+    public static ItemStack applyIdOnItemStack(String id, ItemStack baseItem){
+        ItemStack copy = baseItem.clone();
+        ItemMeta meta = copy.getItemMeta();
+        meta.getPersistentDataContainer().set(GAME_ITEM_KEY, PersistentDataType.STRING, id);
+        copy.setItemMeta(meta);
+        return copy;
     }
+
+    public static ItemMeta applyIdOnItemMeta(String id, ItemMeta baseMeta){
+        ItemMeta copy = baseMeta.clone();
+        copy.getPersistentDataContainer().set(GAME_ITEM_KEY, PersistentDataType.STRING, id);
+        return copy;
+    }
+
+
 
     private void addComponent(ItemComponent component) {
         components.put(component.getType(), component);
@@ -95,10 +108,6 @@ public class GameItem {
         this.canMove = canMove;
     }
 
-    private void setId(String id) {
-        this.id = id;
-    }
-
     public String getId() {
         return id;
     }
@@ -110,14 +119,15 @@ public class GameItem {
     public static String getGameItemId(ItemMeta meta) {
         return meta.getPersistentDataContainer().get(GAME_ITEM_KEY, PersistentDataType.STRING);
     }
+    public static String getGameItemId(ItemStack itemStack) {
+        return itemStack.getPersistentDataContainer().get(GAME_ITEM_KEY, PersistentDataType.STRING);
+    }
 
+
+    //构建器
     public static class Builder{
-
-        private Material material;
-        private Component displayName;
         private List<Component> lore = new ArrayList<>();
-        private int amount = 1;
-        private String id;
+        private final String id;
 
         private Consumer<PlayerInteractEvent> rightClickHandler;
         private Consumer<PlayerInteractEvent> leftClickHandler;
@@ -126,30 +136,10 @@ public class GameItem {
         private boolean canDrop = false;
         private boolean canMove = false;
 
-        public Builder(String id, Material material) {
-            this.material = material;
+        public Builder(String id) {
             this.id = id;
         }
 
-        public Builder displayName(Component displayName) {
-            this.displayName = displayName;
-            return this;
-        }
-
-        public Builder lore(List<Component> lore) {
-            this.lore = lore;
-            return this;
-        }
-
-        public Builder addLineOfLore(Component lore) {
-            this.lore.add(lore);
-            return this;
-        }
-
-        public Builder amount(int amount) {
-            this.amount = amount;
-            return this;
-        }
 
         public Builder canDrop(boolean canDrop) {
             this.canDrop = canDrop;
@@ -179,21 +169,8 @@ public class GameItem {
 
 
         public GameItem build() {
-            ItemStack item = new ItemStack(material);
-            ItemMeta meta = item.getItemMeta();
 
-            if(displayName != null) {
-                meta.displayName(displayName);
-            }
-
-            if(lore != null && !lore.isEmpty()) {
-                meta.lore(lore);
-            }
-
-            meta.getPersistentDataContainer().set(GAME_ITEM_KEY, PersistentDataType.STRING, id);
-            item.setItemMeta(meta);
-
-            GameItem gameItem = new GameItem(item);
+            GameItem gameItem = new GameItem(id);
 
             if(rightClickHandler != null) {
                 RightClickComponent rc = new RightClickComponent();
@@ -215,11 +192,8 @@ public class GameItem {
 
             gameItem.setCanDrop(canDrop);
             gameItem.setCanMove(canMove);
-            gameItem.setId(id);
 
 
-
-            //
 
             return gameItem;
         }

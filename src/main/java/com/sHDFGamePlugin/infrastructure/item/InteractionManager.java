@@ -27,6 +27,8 @@ public class InteractionManager implements Listener {
     private final Map<String, GameItem> gameItemSet = new HashMap<>();
     //由于mc在丢出物品时触发挥手，进而触发左键事件，所以设置一个标志位在丢东西时屏蔽左键事件的触发
     private final Map<UUID, Boolean> leftClickBlocked = new HashMap<>();
+    //由于mc右击地面会发送右击空气的数据包，所以设置时间戳去重
+    private final Map<UUID, Long> lastRightClickTime = new HashMap<>();
 
     private InteractionManager() {}
 
@@ -87,8 +89,18 @@ public class InteractionManager implements Listener {
         GameItem gameItem = gameItemSet.get(id);
         if(gameItem == null) return;
 
-
+        
         if(event.getAction().isRightClick()) {
+            UUID playerid = event.getPlayer().getUniqueId();
+            long now = System.currentTimeMillis();
+            Long last = lastRightClickTime.get(playerid);
+
+            if(last != null && now - last < 100){
+                return;
+            }
+            lastRightClickTime.put(playerid, now);
+
+
             event.setCancelled(true);
             gameItem.handleRightClick(event);
         }

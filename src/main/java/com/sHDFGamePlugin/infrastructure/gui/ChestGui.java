@@ -5,9 +5,12 @@ import com.sHDFGamePlugin.infrastructure.item.GameItem;
 import com.sHDFGamePlugin.infrastructure.item.GameItemRegistry;
 import net.kyori.adventure.text.Component;
 import org.bukkit.Bukkit;
+import org.bukkit.Material;
 import org.bukkit.entity.Player;
 import org.bukkit.event.inventory.InventoryClickEvent;
 import org.bukkit.inventory.Inventory;
+import org.bukkit.inventory.ItemStack;
+import org.bukkit.inventory.meta.ItemMeta;
 
 
 import java.util.HashMap;
@@ -17,12 +20,12 @@ import java.util.function.Consumer;
 public class ChestGui {
 
     private final Inventory inventory;
-    private final Map<Integer, GameItem> gameItems;
+    private final Map<Integer, ItemStack> items;
     private final Consumer<Player> onClose;
 
-    private ChestGui(Inventory inventory, Map<Integer, GameItem> gameItems, Consumer<Player> onClose) {
+    private ChestGui(Inventory inventory, Map<Integer, ItemStack> items, Consumer<Player> onClose) {
         this.inventory = inventory;
-        this.gameItems = gameItems;
+        this.items = items;
         this.onClose = onClose;
     }
 
@@ -43,7 +46,7 @@ public class ChestGui {
     public static class Builder{
         private Component title;
         private int rows = 6;
-        private final Map<Integer, GameItem>  gameItems = new HashMap<>();
+        private final Map<Integer, ItemStack> items = new HashMap<>();
         private Consumer<Player> onClose;
 
         private Builder(){}
@@ -65,8 +68,8 @@ public class ChestGui {
             return this;
         }
 
-        public Builder setSlot(int slot, GameItem gameItem){
-            gameItems.put(slot, gameItem);
+        public Builder setSlot(int slot, ItemStack item){
+            items.put(slot, item);
             return this;
         }
 
@@ -80,15 +83,20 @@ public class ChestGui {
                 title = Component.text("unnamed chest GUI");
             }
             Inventory inventory =  Bukkit.createInventory(null, rows * 9, title);
-            for(Map.Entry<Integer, GameItem> entry : gameItems.entrySet()){
-                inventory.setItem(entry.getKey(), entry.getValue().getItemStack());
+            for(Map.Entry<Integer, ItemStack> entry : items.entrySet()){
+                inventory.setItem(entry.getKey(), entry.getValue());
             }
             for(int i = 0; i < rows * 9; i++){
                 if(inventory.getItem(i) == null){
-                    inventory.setItem(i, GameItemRegistry.getGameItem("GameItem_util_ChestGuiSlotHolder").getItemStack());
+                    ItemStack holder = new ItemStack(Material.LIGHT_GRAY_STAINED_GLASS_PANE);
+                    ItemMeta meta = holder.getItemMeta();
+                    meta.displayName(Component.empty());
+                    meta = GameItem.applyIdOnItemMeta(GameItemRegistry.ItemId.UTIL_CHEST_GUI_SLOT_HOLDER, meta);
+                    holder.setItemMeta(meta);
+                    inventory.setItem(i, holder);
                 }
             }
-            return new ChestGui(inventory, gameItems, onClose);
+            return new ChestGui(inventory, this.items, onClose);
         }
 
 
