@@ -9,6 +9,7 @@ import org.bukkit.event.inventory.ClickType;
 import org.bukkit.event.inventory.InventoryClickEvent;
 import org.bukkit.event.player.PlayerDropItemEvent;
 import org.bukkit.event.player.PlayerInteractEvent;
+import org.bukkit.inventory.EquipmentSlot;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.ItemMeta;
 import org.bukkit.persistence.PersistentDataType;
@@ -75,6 +76,7 @@ public class InteractionManager implements Listener {
 
     @EventHandler
     public void onPlayerInteract(PlayerInteractEvent event) {
+
         ItemStack item = event.getItem();
         if(item == null) return;
         ItemMeta meta = item.getItemMeta();
@@ -91,7 +93,7 @@ public class InteractionManager implements Listener {
             gameItem.handleRightClick(event);
         }
         else if(event.getAction().isLeftClick()) {
-            UUID playerId =  event.getPlayer().getUniqueId();
+            UUID playerId = event.getPlayer().getUniqueId();
             if(leftClickBlocked.remove(playerId) != null){
                 return;
             }

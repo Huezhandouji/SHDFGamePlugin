@@ -39,7 +39,7 @@ public class GameItem {
     }
 
     public ItemStack getItemStack() {
-        return itemStack;
+        return itemStack.clone();
     }
 
     private void addComponent(ItemComponent component) {
@@ -175,6 +175,8 @@ public class GameItem {
             this.inventoryClickHandler = inventoryClickHandler;
             return this;
         }
+
+
 
         public GameItem build() {
             ItemStack item = new ItemStack(material);

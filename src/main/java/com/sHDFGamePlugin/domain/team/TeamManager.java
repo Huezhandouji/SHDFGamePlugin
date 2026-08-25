@@ -32,7 +32,7 @@ public class TeamManager {
 
     public Team getTeam(UUID uuid){
         PlayerStatus status = players.get(uuid);
-        return status != null ? status.getTeam() : Team.UNKNOWN;
+        return status != null ? status.getTeam() : null;
     }
 
     public void setTeam(UUID uuid, Team newTeam){
@@ -50,6 +50,10 @@ public class TeamManager {
         PlayerStatus status = players.get(uuid);
         if(status == null) return;
         status.setReady(ready);
+    }
+    public boolean isReady(UUID uuid){
+        PlayerStatus status = players.get(uuid);
+        return status != null && status.isReady();
     }
 
     public List<UUID> getAllPlayersUuidsInTeam(Team team){

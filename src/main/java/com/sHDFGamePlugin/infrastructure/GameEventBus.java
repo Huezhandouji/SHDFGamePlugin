@@ -29,10 +29,11 @@ public final class GameEventBus {
         }
     }
 
-    public static  <T> void publish(T event) {
+    public static <T> void publish(T event) {
         List<Consumer<Object>> handlers = listeners.get(event.getClass());
         if (handlers == null) return;
-        for (Consumer<Object> handler : handlers) {
+        List<Consumer<Object>> snapshot = new ArrayList<>(handlers);
+        for (Consumer<Object> handler : snapshot) {
             handler.accept(event);
         }
     }

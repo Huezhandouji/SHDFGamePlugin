@@ -26,7 +26,9 @@ public class GameStateMachine {
     }
 
     public void start(){
-
+        if(currentState == null){
+            transitionTo(GameState.IDLE);
+        }
     }
 
     public void transitionTo(GameState newState){

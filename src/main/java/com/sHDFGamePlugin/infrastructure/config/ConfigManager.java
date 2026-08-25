@@ -148,10 +148,8 @@ public class ConfigManager {
         List<Sector> sectors = new ArrayList<>();
         List<Map<?, ?>> objectives = mapSection.getMapList("objectives");
         for(Map<?, ?> obj : objectives){
-            ConfigurationSection sectorSection = new MemoryConfiguration();
-            for(Map.Entry<?, ?> entry : obj.entrySet()){
-                sectorSection.set(entry.getKey().toString(), entry.getValue());
-            }
+            // 递归转换为 ConfigurationSection
+            ConfigurationSection sectorSection = toConfigurationSection(obj);
 
             String id = sectorSection.getString("id");
             String name = sectorSection.getString("name", id);
@@ -188,8 +186,23 @@ public class ConfigManager {
 
             sectors.add(sector);
         }
-
         return sectors;
+    }
+
+    /**
+     * 递归将 Map 转换为 MemoryConfiguration，使嵌套的 Map 也能被正确读取为 ConfigurationSection。
+     */
+    private ConfigurationSection toConfigurationSection(Map<?, ?> map) {
+        MemoryConfiguration section = new MemoryConfiguration();
+        for (Map.Entry<?, ?> entry : map.entrySet()) {
+            Object value = entry.getValue();
+            if (value instanceof Map<?, ?> nestedMap) {
+                section.set(entry.getKey().toString(), toConfigurationSection(nestedMap));
+            } else {
+                section.set(entry.getKey().toString(), value);
+            }
+        }
+        return section;
     }
 
     private Region parseRegion(ConfigurationSection section){

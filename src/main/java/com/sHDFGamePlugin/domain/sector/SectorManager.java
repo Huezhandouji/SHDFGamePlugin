@@ -6,7 +6,6 @@ import com.sHDFGamePlugin.domain.team.TeamManager;
 import com.sHDFGamePlugin.infrastructure.GameEventBus;
 import com.sHDFGamePlugin.infrastructure.event.SectorCapturedEvent;
 import org.bukkit.Bukkit;
-import org.bukkit.GameMode;
 import org.bukkit.entity.Player;
 
 import java.util.List;
@@ -43,7 +42,10 @@ public class SectorManager {
         this.preheatDone = false;
 
         if(sectors != null && !sectors.isEmpty()){
-            //activate
+            activateCurrentSector();
+        }
+        else {
+            this.allCaptured = true;
         }
     }
 

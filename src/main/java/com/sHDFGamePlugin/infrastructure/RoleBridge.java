@@ -30,7 +30,7 @@ public class RoleBridge {
     public void init(){
         this.roleAPI = Bukkit.getServicesManager().load(RoleAPI.class);
         if(this.roleAPI == null){
-            throw new IllegalStateException("Role API could not be loaded");
+            throw new IllegalStateException("Role API 未注册，请检查 ShadowHunterRolesPlugin 是否正确加载");
         }
         this.allowDuplicateRoles = ConfigManager.getInstance().isAllowDuplicateRoles();
     }
@@ -94,7 +94,7 @@ public class RoleBridge {
         Player player = Bukkit.getPlayer(uuid);
         if(player == null || roleId == null || roleId.isEmpty()) return false;
         Team team = TeamManager.getInstance().getTeam(uuid);
-        if(!team.isCombatant()) return false;
+        if(!team.isParticipant()) return false;
 
         //检查所属阵营角色池，如果角色池里面没有将要设置的角色，拒绝设置
         if (currentMapConfig == null) return false;

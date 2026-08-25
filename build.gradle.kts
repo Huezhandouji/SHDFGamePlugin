@@ -39,3 +39,14 @@ tasks {
 kotlin {
     jvmToolchain(21)
 }
+
+//自动复制到服务端文件夹
+tasks.register<Copy>("copyPluginJar"){
+    from(layout.buildDirectory.file("libs/${project.name}-${project.version}.jar"))
+    //目标路径
+    into("C:/Users/ROG/Desktop/paper1.21.11/plugins")
+}
+
+tasks.named("build"){
+    finalizedBy("copyPluginJar")
+}

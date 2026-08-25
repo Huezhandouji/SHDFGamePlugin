@@ -45,6 +45,13 @@ public class Region{
         return new Region(origin, size);
     }
 
+    public Vector randomPoint(){
+        double x = origin.getX() + Math.random() * size.getX();
+        double y = origin.getY() + Math.random() * size.getY();
+        double z = origin.getZ() + Math.random() * size.getZ();
+        return new Vector(x, y, z);
+    }
+
 
 
 
