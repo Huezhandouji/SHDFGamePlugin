@@ -5,7 +5,7 @@ import com.sHDFGamePlugin.domain.sector.Region;
 import com.sHDFGamePlugin.domain.sector.Sector;
 import com.sHDFGamePlugin.domain.sector.SectorManager;
 import com.sHDFGamePlugin.domain.team.PlayerStatus;
-import com.sHDFGamePlugin.domain.team.Team;
+import com.sHDFGamePlugin.domain.team.ShdfTeam;
 import com.sHDFGamePlugin.domain.team.TeamManager;
 import com.sHDFGamePlugin.infrastructure.RoleBridge;
 import com.sHDFGamePlugin.infrastructure.config.MapConfig;
@@ -40,21 +40,21 @@ public class SpawnManager {
     }
 
     //玩家死亡时调用，将其加入重生队列
-    public void addPlayer(UUID uuid, Team team) {
+    public void addPlayer(UUID uuid, ShdfTeam shdfTeam) {
         if(currentMapConfig == null) return;
         //必须是战斗人员
-        if(!team.isParticipant()) return;
+        if(!shdfTeam.isParticipant()) return;
         int waitTicks;
-        switch (team){
+        switch (shdfTeam){
             case ATTACKER -> waitTicks = currentMapConfig.getAttackerRespawnTime();
             case DEFENDER -> waitTicks = currentMapConfig.getDefenderRespawnTime();
             default -> {
-                GameContext.getInstance().getPlugin().getLogger().warning("[SpawnManager] Invalid Team Type");
+                GameContext.getInstance().getPlugin().getLogger().warning("[SpawnManager] Invalid ShdfTeam Type");
                 return;
             }
         }
 
-        respawnQueue.put(uuid, new PendingRespawn(uuid, team, waitTicks));
+        respawnQueue.put(uuid, new PendingRespawn(uuid, shdfTeam, waitTicks));
     }
 
     public void removePlayer(UUID uuid) {
@@ -97,10 +97,10 @@ public class SpawnManager {
         if(currentSector == null) return false;
 
         Region spawnRegion;
-        switch (pending.team){
+        switch (pending.shdfTeam){
             case ATTACKER -> spawnRegion = currentSector.getAttackerSpawnRegion();
             case DEFENDER -> spawnRegion = currentSector.getDefenderSpawnRegion();
-            default -> throw new IllegalArgumentException("Invalid team");
+            default -> throw new IllegalArgumentException("Invalid shdfTeam");
         }
 
         Vector spawnPointVector = spawnRegion.randomPoint();
@@ -130,12 +130,12 @@ public class SpawnManager {
 
     private static class PendingRespawn{
         final UUID uuid;
-        final Team team;
+        final ShdfTeam shdfTeam;
         int remainingTicks;
 
-        PendingRespawn(UUID uuid, Team team, int remainingTicks){
+        PendingRespawn(UUID uuid, ShdfTeam shdfTeam, int remainingTicks){
             this.uuid = uuid;
-            this.team = team;
+            this.shdfTeam = shdfTeam;
             this.remainingTicks = remainingTicks;
         }
     }

@@ -16,7 +16,7 @@ public final class SHDFGamePlugin extends JavaPlugin {
     private static SHDFGamePlugin instance;
 
     //计分板
-    Scoreboard sidebarScoreboard;
+    Scoreboard tempScoreboard;
 
     @Override
     public void onEnable() {
@@ -45,7 +45,7 @@ public final class SHDFGamePlugin extends JavaPlugin {
         RoleBridge.getInstance().init();
 
         //创建计分板
-        sidebarScoreboard = Bukkit.getScoreboardManager().getNewScoreboard();
+        tempScoreboard = Bukkit.getScoreboardManager().getNewScoreboard();
 
         GameStateMachine.getInstance().start();
 
@@ -68,8 +68,8 @@ public final class SHDFGamePlugin extends JavaPlugin {
         return true;
     }
 
-    public Scoreboard getSidebarScoreboard() {
-        return sidebarScoreboard;
+    public Scoreboard getTempScoreboard() {
+        return tempScoreboard;
     }
 
     public static SHDFGamePlugin getInstance(){

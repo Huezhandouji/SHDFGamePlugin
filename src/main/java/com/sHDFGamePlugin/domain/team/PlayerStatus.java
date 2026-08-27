@@ -5,13 +5,13 @@ import java.util.UUID;
 public class PlayerStatus {
 
     private final UUID uuid;
-    private Team team;
+    private ShdfTeam shdfTeam;
     private boolean ready;
     private boolean inBattle;
 
-    public PlayerStatus(UUID uuid, Team team) {
+    public PlayerStatus(UUID uuid, ShdfTeam shdfTeam) {
         this.uuid = uuid;
-        this.team = team;
+        this.shdfTeam = shdfTeam;
         this.ready = false;
         this.inBattle = false;
     }
@@ -20,12 +20,12 @@ public class PlayerStatus {
         return uuid;
     }
 
-    public Team getTeam() {
-        return team;
+    public ShdfTeam getTeam() {
+        return shdfTeam;
     }
 
-    public void setTeam(Team team) {
-        this.team = team;
+    public void setTeam(ShdfTeam shdfTeam) {
+        this.shdfTeam = shdfTeam;
     }
 
     public boolean isReady() {

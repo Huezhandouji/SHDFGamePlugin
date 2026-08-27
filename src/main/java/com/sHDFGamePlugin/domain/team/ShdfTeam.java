@@ -1,6 +1,6 @@
 package com.sHDFGamePlugin.domain.team;
 
-public enum Team {
+public enum ShdfTeam {
 
     ATTACKER,
     DEFENDER,

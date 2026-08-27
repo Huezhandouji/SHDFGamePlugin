@@ -1,7 +1,7 @@
 package com.sHDFGamePlugin.domain.sector;
 
 import com.sHDFGamePlugin.domain.team.PlayerStatus;
-import com.sHDFGamePlugin.domain.team.Team;
+import com.sHDFGamePlugin.domain.team.ShdfTeam;
 import com.sHDFGamePlugin.domain.team.TeamManager;
 import com.sHDFGamePlugin.infrastructure.GameEventBus;
 import com.sHDFGamePlugin.infrastructure.event.SectorCapturedEvent;
@@ -55,8 +55,8 @@ public class SectorManager {
         Sector currentSector = getCurrentSector();
         if(currentSector == null) return;
 
-        int attackerCount = countAliveCombatantsInRegion(Team.ATTACKER, currentSector.getRegion());
-        int defenderCount = countAliveCombatantsInRegion(Team.DEFENDER, currentSector.getRegion());
+        int attackerCount = countAliveCombatantsInRegion(ShdfTeam.ATTACKER, currentSector.getRegion());
+        int defenderCount = countAliveCombatantsInRegion(ShdfTeam.DEFENDER, currentSector.getRegion());
 
         //当进攻方占优势
         if(attackerCount > defenderCount){
@@ -115,10 +115,10 @@ public class SectorManager {
         currentTimeLimit.start();
     }
 
-    private int countAliveCombatantsInRegion(Team team, Region region){
+    private int countAliveCombatantsInRegion(ShdfTeam shdfTeam, Region region){
         int count = 0;
         TeamManager teamManager = TeamManager.getInstance();
-        for(UUID uuid : teamManager.getAllPlayersUuidsInTeam(team)){
+        for(UUID uuid : teamManager.getAllPlayersUuidsInTeam(shdfTeam)){
             Player player = Bukkit.getPlayer(uuid);
             if(player == null || player.isDead() || !player.isOnline()) continue;
             PlayerStatus status = teamManager.getPlayerStatus(uuid);

@@ -5,7 +5,7 @@ import com.sHDFGamePlugin.core.GameContext;
 import com.sHDFGamePlugin.core.GameState;
 import com.sHDFGamePlugin.core.GameStateMachine;
 import com.sHDFGamePlugin.domain.spawn.SpawnManager;
-import com.sHDFGamePlugin.domain.team.Team;
+import com.sHDFGamePlugin.domain.team.ShdfTeam;
 import com.sHDFGamePlugin.domain.team.TeamManager;
 import com.sHDFGamePlugin.infrastructure.GameEventBus;
 import com.sHDFGamePlugin.infrastructure.RoleBridge;
@@ -33,9 +33,8 @@ import org.bukkit.inventory.Inventory;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.ItemMeta;
 import org.bukkit.plugin.java.JavaPlugin;
-import org.bukkit.scoreboard.Criteria;
-import org.bukkit.scoreboard.DisplaySlot;
-import org.bukkit.scoreboard.Objective;
+import org.bukkit.scoreboard.*;
+
 
 import java.time.Duration;
 import java.util.ArrayList;
@@ -68,6 +67,12 @@ public class WaitingPhase implements GamePhase {
     private WaitingCountdown countdown;
     private final int COUNTDOWN_DURATION = 200;
 
+    //玩家名队伍前缀
+    private Team attackerTeam;
+    private Team defenderTeam;
+    private Team spectatorTeam;
+    private Team unknownTeam;
+
 
     private WaitingPhase(){
     }
@@ -81,6 +86,8 @@ public class WaitingPhase implements GamePhase {
     @Override
     public void onEnter() {
         registerGameItems();
+
+        initScoreboardTeam();
 
         joinSubscription = GameEventBus.subscribe(ShdfPlayerJoinEvent.class, event -> {
             handlePlayerJoin(event.getPlayer());
@@ -116,8 +123,40 @@ public class WaitingPhase implements GamePhase {
             quitSubscription.unsubscribe();
             quitSubscription = null;
         }
-
+        clearScoreboardTeam();
+        clearScoreboardTeam();
         cancelCountdown("等待阶段结束");
+    }
+
+    private void initScoreboardTeam(){
+        Scoreboard sb = SHDFGamePlugin.getInstance().getTempScoreboard();
+        if(attackerTeam == null){
+            attackerTeam = sb.registerNewTeam("attacker");
+            attackerTeam.prefix(Component.text("#进攻方SHADOW#", NamedTextColor.LIGHT_PURPLE, TextDecoration.BOLD));
+        }
+        if(defenderTeam == null){
+            defenderTeam = sb.registerNewTeam("defender");
+            defenderTeam.prefix(Component.text("#防守方HUNTER#", NamedTextColor.YELLOW, TextDecoration.BOLD));
+        }
+        if(spectatorTeam == null){
+            spectatorTeam = sb.registerNewTeam("spectator");
+            spectatorTeam.prefix(Component.text("#旁观者#", NamedTextColor.GRAY, TextDecoration.BOLD));
+        }
+        if(unknownTeam == null){
+            unknownTeam = sb.registerNewTeam("unknown");
+            unknownTeam.prefix(Component.text("#随机分配#", NamedTextColor.BLUE, TextDecoration.BOLD));
+        }
+    }
+
+    private void clearScoreboardTeam(){
+        attackerTeam.unregister();
+        attackerTeam = null;
+        defenderTeam.unregister();
+        defenderTeam = null;
+        spectatorTeam.unregister();
+        spectatorTeam = null;
+        unknownTeam.unregister();
+        unknownTeam = null;
     }
 
     private void startCountdown(){
@@ -172,7 +211,7 @@ public class WaitingPhase implements GamePhase {
     }
 
     private void createSidebarObjective(){
-        sidebarObjective = SHDFGamePlugin.getInstance().getSidebarScoreboard().registerNewObjective("waiting_phase_sidebar", Criteria.DUMMY,
+        sidebarObjective = SHDFGamePlugin.getInstance().getTempScoreboard().registerNewObjective("waiting_phase_sidebar", Criteria.DUMMY,
                 Component.text("DECAYING FRONTLINE", NamedTextColor.GOLD, TextDecoration.BOLD));
         sidebarObjective.setDisplaySlot(DisplaySlot.SIDEBAR);
     }
@@ -282,7 +321,7 @@ public class WaitingPhase implements GamePhase {
     private void handlePlayerJoin(Player player){
         TeamManager.getInstance().removePlayer(player.getUniqueId());
         registerPlayer(player);
-        player.setScoreboard(SHDFGamePlugin.getInstance().getSidebarScoreboard());
+        player.setScoreboard(SHDFGamePlugin.getInstance().getTempScoreboard());
         updateSidebarObjective();
         checkStartConditions();
     }
@@ -305,8 +344,9 @@ public class WaitingPhase implements GamePhase {
         TeamManager teamManager = TeamManager.getInstance();
         if(teamManager.getTeam(player.getUniqueId()) == null){
             ConfigManager config =  ConfigManager.getInstance();
-            Team initialTeam = config.isDefaultSpectatorOrUnknown() ? Team.SPECTATOR : Team.UNKNOWN;
-            teamManager.addPlayer(player.getUniqueId(), initialTeam);
+            ShdfTeam initialShdfTeam = config.isDefaultSpectatorOrUnknown() ? ShdfTeam.SPECTATOR : ShdfTeam.UNKNOWN;
+            teamManager.addPlayer(player.getUniqueId(), initialShdfTeam);
+            handleTeamSelect(player, initialShdfTeam);
         }
         updateWaitingGameItems(player);
     }
@@ -352,8 +392,8 @@ public class WaitingPhase implements GamePhase {
     private boolean isConformMinPlayerPerSide(){
         ConfigManager config = ConfigManager.getInstance();
         TeamManager teamManager = TeamManager.getInstance();
-        if(teamManager.getPlayerPopulationOnTeam(Team.ATTACKER) < config.getMinPopulationPerSide()) return false;
-        if(teamManager.getPlayerPopulationOnTeam(Team.DEFENDER) < config.getMinPopulationPerSide()) return false;
+        if(teamManager.getPlayerPopulationOnTeam(ShdfTeam.ATTACKER) < config.getMinPopulationPerSide()) return false;
+        if(teamManager.getPlayerPopulationOnTeam(ShdfTeam.DEFENDER) < config.getMinPopulationPerSide()) return false;
         return true;
     }
 
@@ -366,10 +406,10 @@ public class WaitingPhase implements GamePhase {
         TeamManager teamManager = TeamManager.getInstance();
         if(!config.isRequireReady()) return true;
         if(teamManager.getPlayerPopulation() == 0) return false;
-        for(UUID uuid : teamManager.getAllPlayersUuidsInTeam(Team.ATTACKER)){
+        for(UUID uuid : teamManager.getAllPlayersUuidsInTeam(ShdfTeam.ATTACKER)){
             if(!teamManager.isReady(uuid)) return false;
         }
-        for(UUID uuid : teamManager.getAllPlayersUuidsInTeam(Team.DEFENDER)){
+        for(UUID uuid : teamManager.getAllPlayersUuidsInTeam(ShdfTeam.DEFENDER)){
             if(!teamManager.isReady(uuid)) return false;
         }
         return true;
@@ -378,9 +418,9 @@ public class WaitingPhase implements GamePhase {
     private void updateWaitingGameItems(Player player){
         TeamManager teamManager = TeamManager.getInstance();
         UUID playerId = player.getUniqueId();
-        Team team = teamManager.getTeam(playerId);
-        if(team == null) return;
-        boolean isCombatant = team.isCombatant();
+        ShdfTeam shdfTeam = teamManager.getTeam(playerId);
+        if(shdfTeam == null) return;
+        boolean isCombatant = shdfTeam.isCombatant();
 
         Inventory inv = player.getInventory();
 
@@ -449,29 +489,29 @@ public class WaitingPhase implements GamePhase {
         Player player = event.getPlayer();
 
         switch (itemId){
-            case teamButtonAttackerId -> handleTeamSelect(player, Team.ATTACKER);
-            case teamButtonDefenderId -> handleTeamSelect(player, Team.DEFENDER);
-            case teamButtonSpectatorId -> handleTeamSelect(player, Team.SPECTATOR);
-            case teamButtonUnknownId -> handleTeamSelect(player, Team.UNKNOWN);
+            case teamButtonAttackerId -> handleTeamSelect(player, ShdfTeam.ATTACKER);
+            case teamButtonDefenderId -> handleTeamSelect(player, ShdfTeam.DEFENDER);
+            case teamButtonSpectatorId -> handleTeamSelect(player, ShdfTeam.SPECTATOR);
+            case teamButtonUnknownId -> handleTeamSelect(player, ShdfTeam.UNKNOWN);
             default -> {
                 //忽略其他物品
             }
         }
     }
 
-    private void handleTeamSelect(Player player, Team targetTeam){
+    private void handleTeamSelect(Player player, ShdfTeam targetShdfTeam){
         TeamManager teamManager = TeamManager.getInstance();
         UUID uuid = player.getUniqueId();
-        Team currentTeam = teamManager.getTeam(uuid);
+        ShdfTeam currentShdfTeam = teamManager.getTeam(uuid);
 
         //检查人数差是否可接受
-        if(targetTeam == Team.ATTACKER || targetTeam == Team.DEFENDER){
-            int attackers = teamManager.getPlayerPopulationOnTeam(Team.ATTACKER);
-            int defenders = teamManager.getPlayerPopulationOnTeam(Team.DEFENDER);
-            if(currentTeam == Team.ATTACKER) attackers--;
-            if(currentTeam == Team.DEFENDER) defenders--;
-            if(targetTeam == Team.ATTACKER) attackers++;
-            if(targetTeam == Team.DEFENDER) defenders++;
+        if(targetShdfTeam == ShdfTeam.ATTACKER || targetShdfTeam == ShdfTeam.DEFENDER){
+            int attackers = teamManager.getPlayerPopulationOnTeam(ShdfTeam.ATTACKER);
+            int defenders = teamManager.getPlayerPopulationOnTeam(ShdfTeam.DEFENDER);
+            if(currentShdfTeam == ShdfTeam.ATTACKER) attackers--;
+            if(currentShdfTeam == ShdfTeam.DEFENDER) defenders--;
+            if(targetShdfTeam == ShdfTeam.ATTACKER) attackers++;
+            if(targetShdfTeam == ShdfTeam.DEFENDER) defenders++;
 
             int diff = Math.abs(attackers - defenders);
             if(diff > ConfigManager.getInstance().getMaxSideDiff()){
@@ -480,11 +520,11 @@ public class WaitingPhase implements GamePhase {
             }
         }
 
-        teamManager.setTeam(uuid, targetTeam);
+        teamManager.setTeam(uuid, targetShdfTeam);
         player.closeInventory();
 
         //切换准备状态
-        if(targetTeam.isCombatant()){
+        if(targetShdfTeam.isCombatant()){
             TeamManager.getInstance().setReady(uuid, false);
         }
         else{
@@ -492,9 +532,17 @@ public class WaitingPhase implements GamePhase {
         }
         updateSidebarObjective();
 
-        player.sendMessage(Component.text("SHDF>>你加入了" + targetTeam.name()));
+        player.sendMessage(Component.text("SHDF>>你加入了" + targetShdfTeam.name()));
         player.playSound(player.getLocation(), Sound.ENTITY_EXPERIENCE_ORB_PICKUP, 1, 1);
         updateWaitingGameItems(player);
+
+        switch (targetShdfTeam){
+            case ATTACKER -> attackerTeam.addPlayer(player);
+            case DEFENDER -> defenderTeam.addPlayer(player);
+            case SPECTATOR -> spectatorTeam.addPlayer(player);
+            case UNKNOWN -> unknownTeam.addPlayer(player);
+        }
+
         checkStartConditions();
     }
 
@@ -504,8 +552,8 @@ public class WaitingPhase implements GamePhase {
             ItemMeta meta = buttonAttacker.getItemMeta();
             meta.displayName(Component.text("进攻方-SHADOW",  NamedTextColor.LIGHT_PURPLE, TextDecoration.BOLD));
             List<Component> lore = new ArrayList<>();
-            lore.add(Component.text("这个队伍有 " + TeamManager.getInstance().getPlayerPopulationOnTeam(Team.ATTACKER) + " 名玩家:", NamedTextColor.GRAY));
-            for(UUID pid : TeamManager.getInstance().getAllPlayersUuidsInTeam(Team.ATTACKER)){
+            lore.add(Component.text("这个队伍有 " + TeamManager.getInstance().getPlayerPopulationOnTeam(ShdfTeam.ATTACKER) + " 名玩家:", NamedTextColor.GRAY));
+            for(UUID pid : TeamManager.getInstance().getAllPlayersUuidsInTeam(ShdfTeam.ATTACKER)){
                 Player p = Bukkit.getPlayer(pid);
                 if(p == null){
                     lore.add(Component.text("#无法通过uuid获取玩家", NamedTextColor.RED));
@@ -524,8 +572,8 @@ public class WaitingPhase implements GamePhase {
             ItemMeta meta = buttonDefender.getItemMeta();
             meta.displayName(Component.text("防守方-SHADOW",  NamedTextColor.YELLOW, TextDecoration.BOLD));
             List<Component> lore = new ArrayList<>();
-            lore.add(Component.text("这个队伍有 " + TeamManager.getInstance().getPlayerPopulationOnTeam(Team.DEFENDER) + " 名玩家:", NamedTextColor.GRAY));
-            for(UUID pid : TeamManager.getInstance().getAllPlayersUuidsInTeam(Team.DEFENDER)){
+            lore.add(Component.text("这个队伍有 " + TeamManager.getInstance().getPlayerPopulationOnTeam(ShdfTeam.DEFENDER) + " 名玩家:", NamedTextColor.GRAY));
+            for(UUID pid : TeamManager.getInstance().getAllPlayersUuidsInTeam(ShdfTeam.DEFENDER)){
                 Player p = Bukkit.getPlayer(pid);
                 if(p == null){
                     lore.add(Component.text("#无法通过uuid获取玩家", NamedTextColor.RED));
@@ -545,8 +593,8 @@ public class WaitingPhase implements GamePhase {
             meta.displayName(Component.text("观众",  NamedTextColor.BLUE, TextDecoration.BOLD));
             List<Component> lore = new ArrayList<>();
             lore.add(Component.text("对局开始后, 你将以观战者加入!", NamedTextColor.YELLOW, TextDecoration.BOLD));
-            lore.add(Component.text("这个队伍有 " + TeamManager.getInstance().getPlayerPopulationOnTeam(Team.SPECTATOR) + " 名玩家:", NamedTextColor.GRAY));
-            for(UUID pid : TeamManager.getInstance().getAllPlayersUuidsInTeam(Team.SPECTATOR)){
+            lore.add(Component.text("这个队伍有 " + TeamManager.getInstance().getPlayerPopulationOnTeam(ShdfTeam.SPECTATOR) + " 名玩家:", NamedTextColor.GRAY));
+            for(UUID pid : TeamManager.getInstance().getAllPlayersUuidsInTeam(ShdfTeam.SPECTATOR)){
                 Player p = Bukkit.getPlayer(pid);
                 if(p == null){
                     lore.add(Component.text("#无法通过uuid获取玩家", NamedTextColor.RED));
@@ -566,8 +614,8 @@ public class WaitingPhase implements GamePhase {
             meta.displayName(Component.text("随机阵营",  NamedTextColor.GREEN, TextDecoration.BOLD));
             List<Component> lore = new ArrayList<>();
             lore.add(Component.text("你将会在游戏开始时被随机分配到进攻方或者防守方!", NamedTextColor.YELLOW, TextDecoration.BOLD));
-            lore.add(Component.text("这个队伍有 " + TeamManager.getInstance().getPlayerPopulationOnTeam(Team.UNKNOWN) + " 名玩家:", NamedTextColor.GRAY));
-            for(UUID pid : TeamManager.getInstance().getAllPlayersUuidsInTeam(Team.UNKNOWN)){
+            lore.add(Component.text("这个队伍有 " + TeamManager.getInstance().getPlayerPopulationOnTeam(ShdfTeam.UNKNOWN) + " 名玩家:", NamedTextColor.GRAY));
+            for(UUID pid : TeamManager.getInstance().getAllPlayersUuidsInTeam(ShdfTeam.UNKNOWN)){
                 Player p = Bukkit.getPlayer(pid);
                 if(p == null){
                     lore.add(Component.text("#无法通过uuid获取玩家", NamedTextColor.RED));
@@ -597,8 +645,8 @@ public class WaitingPhase implements GamePhase {
         UUID uuid = player.getUniqueId();
 
         //只有战斗人员才能准备
-        Team team = teamManager.getTeam(uuid);
-        if (team == null || !team.isCombatant()) {
+        ShdfTeam shdfTeam = teamManager.getTeam(uuid);
+        if (shdfTeam == null || !shdfTeam.isCombatant()) {
             player.sendMessage(Component.text("SHDF>>只有战斗人员才能准备").color(NamedTextColor.GRAY));
             return;
         }

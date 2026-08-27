@@ -1,6 +1,6 @@
 package com.sHDFGamePlugin.infrastructure;
 
-import com.sHDFGamePlugin.domain.team.Team;
+import com.sHDFGamePlugin.domain.team.ShdfTeam;
 import com.sHDFGamePlugin.domain.team.TeamManager;
 import com.sHDFGamePlugin.infrastructure.config.ConfigManager;
 import com.sHDFGamePlugin.infrastructure.config.MapConfig;
@@ -93,13 +93,13 @@ public class RoleBridge {
         //参数有问题，不是战斗人员拒绝设置角色
         Player player = Bukkit.getPlayer(uuid);
         if(player == null || roleId == null || roleId.isEmpty()) return false;
-        Team team = TeamManager.getInstance().getTeam(uuid);
-        if(!team.isParticipant()) return false;
+        ShdfTeam shdfTeam = TeamManager.getInstance().getTeam(uuid);
+        if(!shdfTeam.isParticipant()) return false;
 
         //检查所属阵营角色池，如果角色池里面没有将要设置的角色，拒绝设置
         if (currentMapConfig == null) return false;
         List<String> rolePool;
-        switch (team){
+        switch (shdfTeam){
             case ATTACKER -> rolePool = currentMapConfig.getAttackerRoles();
             case DEFENDER -> rolePool = currentMapConfig.getDefenderRoles();
             default -> {
@@ -112,7 +112,7 @@ public class RoleBridge {
 
         //根据阵营获取对应的角色记录
         Collection<String> occupiedRoles;
-        switch (team){
+        switch (shdfTeam){
             case ATTACKER -> occupiedRoles = attackerPlayerRoleMap.values();
             case DEFENDER -> occupiedRoles = defenderPlayerRoleMap.values();
             default -> {
@@ -134,7 +134,7 @@ public class RoleBridge {
         if(!success){
             return false;
         }
-        switch (team){
+        switch (shdfTeam){
             case ATTACKER -> attackerPlayerRoleMap.put(uuid, roleId);
             case DEFENDER -> defenderPlayerRoleMap.put(uuid, roleId);
             default -> {

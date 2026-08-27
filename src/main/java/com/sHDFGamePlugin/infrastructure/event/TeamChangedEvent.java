@@ -1,6 +1,6 @@
 package com.sHDFGamePlugin.infrastructure.event;
 
-import com.sHDFGamePlugin.domain.team.Team;
+import com.sHDFGamePlugin.domain.team.ShdfTeam;
 import com.sHDFGamePlugin.infrastructure.SHDFGameEvent;
 
 import java.util.UUID;
@@ -8,24 +8,24 @@ import java.util.UUID;
 public class TeamChangedEvent extends SHDFGameEvent {
 
     private final UUID playerUuid;;
-    private final Team oldTeam;
-    private final Team newTeam;
+    private final ShdfTeam oldShdfTeam;
+    private final ShdfTeam newShdfTeam;
 
-    public TeamChangedEvent(UUID playerUuid, Team oldTeam, Team newTeam) {
+    public TeamChangedEvent(UUID playerUuid, ShdfTeam oldShdfTeam, ShdfTeam newShdfTeam) {
         this.playerUuid = playerUuid;
-        this.oldTeam = oldTeam;
-        this.newTeam = newTeam;
+        this.oldShdfTeam = oldShdfTeam;
+        this.newShdfTeam = newShdfTeam;
     }
 
     public UUID getPlayerUuid() {
         return playerUuid;
     }
 
-    public Team getOldTeam() {
-        return oldTeam;
+    public ShdfTeam getOldTeam() {
+        return oldShdfTeam;
     }
 
-    public Team getNewTeam() {
-        return newTeam;
+    public ShdfTeam getNewTeam() {
+        return newShdfTeam;
     }
 }

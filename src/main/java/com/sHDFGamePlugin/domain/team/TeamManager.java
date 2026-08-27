@@ -22,28 +22,28 @@ public class TeamManager {
         players.clear();
     }
 
-    public void addPlayer(UUID uuid, Team team){
-        players.put(uuid, new PlayerStatus(uuid, team));
+    public void addPlayer(UUID uuid, ShdfTeam shdfTeam){
+        players.put(uuid, new PlayerStatus(uuid, shdfTeam));
     }
 
     public void removePlayer(UUID uuid){
         players.remove(uuid);
     }
 
-    public Team getTeam(UUID uuid){
+    public ShdfTeam getTeam(UUID uuid){
         PlayerStatus status = players.get(uuid);
         return status != null ? status.getTeam() : null;
     }
 
-    public void setTeam(UUID uuid, Team newTeam){
+    public void setTeam(UUID uuid, ShdfTeam newShdfTeam){
         PlayerStatus status = players.get(uuid);
         if(status == null) return;
 
-        Team oldTeam = status.getTeam();
-        if(oldTeam == newTeam) return;
+        ShdfTeam oldShdfTeam = status.getTeam();
+        if(oldShdfTeam == newShdfTeam) return;
 
-        status.setTeam(newTeam);
-        GameEventBus.publish(new TeamChangedEvent(uuid, oldTeam, newTeam));
+        status.setTeam(newShdfTeam);
+        GameEventBus.publish(new TeamChangedEvent(uuid, oldShdfTeam, newShdfTeam));
     }
 
     public void setReady(UUID uuid, boolean ready){
@@ -56,16 +56,16 @@ public class TeamManager {
         return status != null && status.isReady();
     }
 
-    public List<UUID> getAllPlayersUuidsInTeam(Team team){
+    public List<UUID> getAllPlayersUuidsInTeam(ShdfTeam shdfTeam){
         return players.values().stream()
-                .filter(status -> status.getTeam() == team)
+                .filter(status -> status.getTeam() == shdfTeam)
                 .map(PlayerStatus::getUuid)
                 .collect(Collectors.toList());
     }
 
-    public int getPlayerPopulationOnTeam(Team team){
+    public int getPlayerPopulationOnTeam(ShdfTeam shdfTeam){
         return (int) players.values().stream()
-                .filter(status -> status.getTeam() == team)
+                .filter(status -> status.getTeam() == shdfTeam)
                 .count();
     }
 
@@ -76,38 +76,38 @@ public class TeamManager {
 
 
     public int getSideDiff(){
-        int a = getPlayerPopulationOnTeam(Team.ATTACKER);
-        int d =  getPlayerPopulationOnTeam(Team.DEFENDER);
+        int a = getPlayerPopulationOnTeam(ShdfTeam.ATTACKER);
+        int d =  getPlayerPopulationOnTeam(ShdfTeam.DEFENDER);
         return Math.abs(a - d);
     }
 
     public boolean hasUnknownTeamPlayers(){
-        return players.values().stream().anyMatch(status -> status.getTeam() == Team.UNKNOWN);
+        return players.values().stream().anyMatch(status -> status.getTeam() == ShdfTeam.UNKNOWN);
     }
 
     public void autoAssignUnknownTeamPlayers(){
-        List<UUID> unknowns = getAllPlayersUuidsInTeam(Team.UNKNOWN);
+        List<UUID> unknowns = getAllPlayersUuidsInTeam(ShdfTeam.UNKNOWN);
         for(UUID uuid : unknowns){
-            Team target = chooseLessPopulationTeam();
+            ShdfTeam target = chooseLessPopulationTeam();
             setTeam(uuid, target);
         }
         ;
     }
 
-    private Team chooseLessPopulationTeam(){
-        int a = getPlayerPopulationOnTeam(Team.ATTACKER);
-        int d =  getPlayerPopulationOnTeam(Team.DEFENDER);
-        if(a < d) return Team.ATTACKER;
-        if(a > d) return Team.DEFENDER;
-        return new Random().nextBoolean() ? Team.ATTACKER : Team.DEFENDER;
+    private ShdfTeam chooseLessPopulationTeam(){
+        int a = getPlayerPopulationOnTeam(ShdfTeam.ATTACKER);
+        int d =  getPlayerPopulationOnTeam(ShdfTeam.DEFENDER);
+        if(a < d) return ShdfTeam.ATTACKER;
+        if(a > d) return ShdfTeam.DEFENDER;
+        return new Random().nextBoolean() ? ShdfTeam.ATTACKER : ShdfTeam.DEFENDER;
     }
 
     public Collection<PlayerStatus> getAllPlayerStatuses(){
         return Collections.unmodifiableCollection(players.values());
     }
 
-    public Collection<PlayerStatus> getAllPlayerStatusesInTeam(Team team){
-        return players.values().stream().filter(status -> status.getTeam() == team).toList();
+    public Collection<PlayerStatus> getAllPlayerStatusesInTeam(ShdfTeam shdfTeam){
+        return players.values().stream().filter(status -> status.getTeam() == shdfTeam).toList();
     }
 
     public PlayerStatus getPlayerStatus(UUID uuid){
