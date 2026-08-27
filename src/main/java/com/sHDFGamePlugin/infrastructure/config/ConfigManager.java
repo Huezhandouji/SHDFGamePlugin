@@ -21,6 +21,8 @@ public class ConfigManager {
     private FileConfiguration mapConfigFile;
     private final Map<String, MapConfig> mapConfigs = new HashMap<>();
 
+    private String selectedMapId;
+
     private ConfigManager(){}
 
     public static ConfigManager getInstance() {
@@ -41,7 +43,23 @@ public class ConfigManager {
 
         loadMapConfigs();
 
+        List<String> mapNames = getMapNames();
+        if(!mapNames.isEmpty()){
+            selectedMapId = mapNames.getFirst();
+        }
+
         plugin.getLogger().info("Configuration loaded!");
+    }
+
+    public MapConfig getSelectedMapConfig(){
+        if(selectedMapId == null) return null;
+        return mapConfigs.get(selectedMapId);
+    }
+
+    public void setSelectedMapId(String mapId){
+        if(mapConfigs.containsKey(mapId)){
+            this.selectedMapId = mapId;
+        }
     }
 
     //全局配置

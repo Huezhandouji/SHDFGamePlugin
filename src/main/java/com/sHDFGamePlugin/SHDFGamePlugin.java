@@ -8,11 +8,15 @@ import com.sHDFGamePlugin.listener.PlayerJoinListener;
 import com.sHDFGamePlugin.listener.PlayerQuitListener;
 import org.bukkit.Bukkit;
 import org.bukkit.plugin.java.JavaPlugin;
+import org.bukkit.scoreboard.Scoreboard;
 
 
 public final class SHDFGamePlugin extends JavaPlugin {
 
     private static SHDFGamePlugin instance;
+
+    //计分板
+    Scoreboard sidebarScoreboard;
 
     @Override
     public void onEnable() {
@@ -39,6 +43,10 @@ public final class SHDFGamePlugin extends JavaPlugin {
 
         GameContext.getInstance().init(this);
         RoleBridge.getInstance().init();
+
+        //创建计分板
+        sidebarScoreboard = Bukkit.getScoreboardManager().getNewScoreboard();
+
         GameStateMachine.getInstance().start();
 
 
@@ -58,6 +66,10 @@ public final class SHDFGamePlugin extends JavaPlugin {
         }
         getLogger().info("Succeeded to find the dependency 'ShadowHunterRolesPlugin'!");
         return true;
+    }
+
+    public Scoreboard getSidebarScoreboard() {
+        return sidebarScoreboard;
     }
 
     public static SHDFGamePlugin getInstance(){

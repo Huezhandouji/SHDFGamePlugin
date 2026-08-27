@@ -63,15 +63,21 @@ public class TeamManager {
                 .collect(Collectors.toList());
     }
 
-    public int getPlayerCount(Team team){
+    public int getPlayerPopulationOnTeam(Team team){
         return (int) players.values().stream()
                 .filter(status -> status.getTeam() == team)
                 .count();
     }
 
+    public int getPlayerPopulation(){
+        return players.size();
+    }
+
+
+
     public int getSideDiff(){
-        int a = getPlayerCount(Team.ATTACKER);
-        int d =  getPlayerCount(Team.DEFENDER);
+        int a = getPlayerPopulationOnTeam(Team.ATTACKER);
+        int d =  getPlayerPopulationOnTeam(Team.DEFENDER);
         return Math.abs(a - d);
     }
 
@@ -89,8 +95,8 @@ public class TeamManager {
     }
 
     private Team chooseLessPopulationTeam(){
-        int a = getPlayerCount(Team.ATTACKER);
-        int d =  getPlayerCount(Team.DEFENDER);
+        int a = getPlayerPopulationOnTeam(Team.ATTACKER);
+        int d =  getPlayerPopulationOnTeam(Team.DEFENDER);
         if(a < d) return Team.ATTACKER;
         if(a > d) return Team.DEFENDER;
         return new Random().nextBoolean() ? Team.ATTACKER : Team.DEFENDER;
