@@ -7,13 +7,16 @@ public class PlayerStatus {
     private final UUID uuid;
     private ShdfTeam shdfTeam;
     private boolean ready;
-    private boolean inBattle;
+    private PlayerState state;
 
-    public PlayerStatus(UUID uuid, ShdfTeam shdfTeam) {
+    //新增：玩家整场选定的角色ID（ROLE_SELECTION 阶段记录，部署时使用）
+    private String selectedRoleId;
+
+    public PlayerStatus(UUID uuid, ShdfTeam shdfTeam, PlayerState state) {
         this.uuid = uuid;
         this.shdfTeam = shdfTeam;
         this.ready = false;
-        this.inBattle = false;
+        this.state = state;
     }
 
     public UUID getUuid() {
@@ -36,11 +39,19 @@ public class PlayerStatus {
         this.ready = ready;
     }
 
-    public boolean isInBattle() {
-        return inBattle;
+    public PlayerState getState() {
+        return state;
     }
 
-    public void setInBattle(boolean inBattle) {
-        this.inBattle = inBattle;
+    public void setState(PlayerState state) {
+        this.state = state;
+    }
+
+    public String getSelectedRoleId() {
+        return selectedRoleId;
+    }
+
+    public void setSelectedRoleId(String selectedRoleId) {
+        this.selectedRoleId = selectedRoleId;
     }
 }

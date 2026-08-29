@@ -5,6 +5,7 @@ import com.sHDFGamePlugin.core.GameContext;
 import com.sHDFGamePlugin.core.GameState;
 import com.sHDFGamePlugin.core.GameStateMachine;
 import com.sHDFGamePlugin.domain.spawn.SpawnManager;
+import com.sHDFGamePlugin.domain.team.PlayerState;
 import com.sHDFGamePlugin.domain.team.ShdfTeam;
 import com.sHDFGamePlugin.domain.team.TeamManager;
 import com.sHDFGamePlugin.infrastructure.GameEventBus;
@@ -85,6 +86,8 @@ public class WaitingPhase implements GamePhase {
 
     @Override
     public void onEnter() {
+        TeamManager.getInstance().removeAllPlayers();
+
         registerGameItems();
 
         initScoreboardTeam();
@@ -126,6 +129,8 @@ public class WaitingPhase implements GamePhase {
         clearScoreboardTeam();
         clearScoreboardTeam();
         cancelCountdown("等待阶段结束");
+        //阶段切换清理：关闭所有打开的游戏 GUI
+        ChestGui.closeAllGuis();
     }
 
     private void initScoreboardTeam(){
@@ -197,7 +202,7 @@ public class WaitingPhase implements GamePhase {
             }
         });
         countdown.setOnFinish(() -> {
-            GameStateMachine.getInstance().transitionTo(GameState.PLAYING);
+            GameStateMachine.getInstance().transitionTo(GameState.ROLE_SELECTING);
         });
 
         countdown.start();
@@ -345,7 +350,7 @@ public class WaitingPhase implements GamePhase {
         if(teamManager.getTeam(player.getUniqueId()) == null){
             ConfigManager config =  ConfigManager.getInstance();
             ShdfTeam initialShdfTeam = config.isDefaultSpectatorOrUnknown() ? ShdfTeam.SPECTATOR : ShdfTeam.UNKNOWN;
-            teamManager.addPlayer(player.getUniqueId(), initialShdfTeam);
+            teamManager.addPlayer(player.getUniqueId(), initialShdfTeam, PlayerState.WAITING);
             handleTeamSelect(player, initialShdfTeam);
         }
         updateWaitingGameItems(player);

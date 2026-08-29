@@ -20,6 +20,12 @@ import java.util.List;
 import java.util.Map;
 import java.util.function.Consumer;
 
+/**
+ * 游戏物品逻辑对象（不持有 ItemStack）。
+ * <p>
+ * 以组件类型（Class）为键持有行为组件，同一类型只能有一个实例。
+ * 通过 PDC 中的 {@link #GAME_ITEM_KEY} 与实体物品关联。
+ */
 public class GameItem {
 
     public static final NamespacedKey GAME_ITEM_KEY = new NamespacedKey(
@@ -27,7 +33,7 @@ public class GameItem {
             "game_item_id"
     );
 
-    private final Map<String, ItemComponent> components = new HashMap<>();
+    private final Map<Class<? extends ItemComponent>, ItemComponent> components = new HashMap<>();
 
     private boolean canDrop = false;
     private boolean canMove = false;
@@ -56,39 +62,35 @@ public class GameItem {
 
 
     private void addComponent(ItemComponent component) {
-        components.put(component.getType(), component);
+        components.put(component.getClass(), component);
     }
 
-    public boolean hasComponent(String type) {
+    public boolean hasComponent(Class<? extends ItemComponent> type) {
         return components.containsKey(type);
     }
 
-    @SuppressWarnings("unchecked")
-    public <T extends ItemComponent> T getComponent(String type) {
-        return (T) components.get(type);
+    public <T extends ItemComponent> T getComponent(Class<T> type) {
+        return type.cast(components.get(type));
     }
 
     public void handleRightClick(PlayerInteractEvent event) {
-        if(!hasComponent(RightClickComponent.TYPE)) return;
-        ItemComponent component = getComponent(RightClickComponent.TYPE);
-        if(component instanceof RightClickComponent component1){
-            component1.handleRightClick(event);
+        RightClickComponent component = getComponent(RightClickComponent.class);
+        if(component != null){
+            component.handleRightClick(event);
         }
     }
 
     public void handleLeftClick(PlayerInteractEvent event) {
-        if(!hasComponent(LeftClickComponent.TYPE)) return;
-        ItemComponent component = getComponent(LeftClickComponent.TYPE);
-        if(component instanceof LeftClickComponent component1){
-            component1.handleLeftClick(event);
+        LeftClickComponent component = getComponent(LeftClickComponent.class);
+        if(component != null){
+            component.handleLeftClick(event);
         }
     }
 
     public void handleInventoryClick(InventoryClickEvent event) {
-        if(!hasComponent(InventoryClickComponent.TYPE)) return;
-        ItemComponent component = getComponent(InventoryClickComponent.TYPE);
-        if(component instanceof InventoryClickComponent component1){
-            component1.handleInventoryClick(event);
+        InventoryClickComponent component = getComponent(InventoryClickComponent.class);
+        if(component != null){
+            component.handleInventoryClick(event);
         }
     }
 

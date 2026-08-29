@@ -1,13 +1,14 @@
-package com.sHDFGamePlugin.domain.sector;
+package com.sHDFGamePlugin.infrastructure.regionExpression;
 
 import org.bukkit.util.Vector;
 
-public class Region{
+public class CubeRegion implements Region{
+
     private final Vector origin;
     private final Vector size;
 
     //必须保证size的分量都是正数
-    private Region(Vector origin, Vector size){
+    private CubeRegion(Vector origin, Vector size){
         if(size.getX() <= 0 || size.getY() <= 0 || size.getZ() <= 0){
             throw new IllegalArgumentException("All vector components of 'size' must be positive!");
         }
@@ -23,10 +24,12 @@ public class Region{
     public Vector getOrigin() {
         return origin.clone();
     }
+
     public Vector getSize() {
         return size.clone();
     }
 
+    @Override
     public Vector getCenter() {
         return new Vector(
                 origin.getX() + size.getX() / 2d,
@@ -35,14 +38,16 @@ public class Region{
         );
     }
 
+    @Override
     public boolean contains(Vector vector){
         return vector.getX() >= origin.getX() && vector.getX() <= origin.getX() + size.getX()
                 && vector.getY() >= origin.getY() && vector.getY() <= origin.getY() + size.getY()
                 && vector.getZ() >= origin.getZ() && vector.getZ() <= origin.getZ() + size.getZ();
     }
 
-    public Region copy(){
-        return new Region(origin, size);
+    @Override
+    public CubeRegion copy(){
+        return new CubeRegion(origin, size);
     }
 
     public Vector randomPoint(){
@@ -56,11 +61,11 @@ public class Region{
 
 
     //创建实例的静态方法
-    public static Region createFromOriginAndSize(Vector origin, Vector size){
-        return new Region(origin, size);
+    public static CubeRegion createFromOriginAndSize(Vector origin, Vector size){
+        return new CubeRegion(origin, size);
     }
 
-    public static Region createFromCorners(Vector a, Vector b){
+    public static CubeRegion createFromCorners(Vector a, Vector b){
         double minX = Math.min(a.getX(), b.getX());
         double minY = Math.min(a.getY(), b.getY());
         double minZ = Math.min(a.getZ(), b.getZ());
@@ -69,7 +74,7 @@ public class Region{
         double maxZ = Math.max(a.getZ(), b.getZ());
         Vector origin = new Vector(minX, minY, minZ);
         Vector size = new Vector(maxX -  minX, maxY - minY, maxZ - minZ);
-        return new Region(origin, size);
+        return new CubeRegion(origin, size);
     }
 
 

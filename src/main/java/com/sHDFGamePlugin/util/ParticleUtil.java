@@ -1,6 +1,6 @@
 package com.sHDFGamePlugin.util;
 
-import com.sHDFGamePlugin.domain.sector.Region;
+import com.sHDFGamePlugin.infrastructure.regionExpression.CubeRegion;
 import org.bukkit.Particle;
 import org.bukkit.World;
 import org.bukkit.util.Vector;
@@ -8,7 +8,7 @@ import org.bukkit.util.Vector;
 public class ParticleUtil {
 
     //用粒子绘制Region的8条边
-    public static void drawRegionEdges(Region region, World world, Particle particle, double step){
+    public static void drawRegionEdges(CubeRegion region, World world, Particle particle, double step){
         Vector origin = region.getOrigin();
         Vector size = region.getSize();
 

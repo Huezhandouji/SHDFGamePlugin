@@ -1,7 +1,7 @@
 package com.sHDFGamePlugin.infrastructure.config;
 
-import com.sHDFGamePlugin.domain.sector.Region;
 import com.sHDFGamePlugin.domain.sector.Sector;
+import com.sHDFGamePlugin.infrastructure.regionExpression.CubeRegion;
 import net.kyori.adventure.text.Component;
 import org.bukkit.configuration.ConfigurationSection;
 import org.bukkit.configuration.MemoryConfiguration;
@@ -19,6 +19,7 @@ public class ConfigManager {
 
     private FileConfiguration mainConfig;
     private FileConfiguration mapConfigFile;
+    private JavaPlugin plugin;
     private final Map<String, MapConfig> mapConfigs = new HashMap<>();
 
     private String selectedMapId;
@@ -30,6 +31,7 @@ public class ConfigManager {
     }
 
     public void init(JavaPlugin plugin) {
+        this.plugin = plugin;
         //config.yml
         plugin.saveDefaultConfig();
         mainConfig = plugin.getConfig();
@@ -83,10 +85,6 @@ public class ConfigManager {
         return mainConfig.getBoolean("waiting.require_ready", true);
     }
 
-    public int getRespawnInvulnerability(){
-        return mainConfig.getInt("playing.invulnerability", 60);
-    }
-
     public boolean isAllowDuplicateRoles(){
         return mainConfig.getBoolean("playing.allow_duplicate_roles", false);
     }
@@ -104,44 +102,81 @@ public class ConfigManager {
         return Collections.unmodifiableMap(mapConfigs);
     }
 
+    //当前选中地图的观战者出生点
+    public Vector getSpectatorSpawnpoint(){
+        MapConfig selected = getSelectedMapConfig();
+        return selected != null ? selected.getSpectatorSpawnpoint() : null;
+    }
+
+    //指定地图的观战者出生点
+    public Vector getSpectatorSpawnpoint(String mapId){
+        MapConfig config = mapConfigs.get(mapId);
+        return config != null ? config.getSpectatorSpawnpoint() : null;
+    }
+
+    //大厅出生点（等待阶段）
+    public Vector getLobbySpawnpoint(){
+        return parseVector(mainConfig.getConfigurationSection("waiting.lobby_spawnpoint"));
+    }
+
+    //进攻方出生点（角色选择阶段）
+    public Vector getRoleSelectionAttackerSpawnpoint(){
+        return parseVector(mainConfig.getConfigurationSection("role_selection.attacker_spawnpoint"));
+    }
+
+    //防守方出生点（角色选择阶段）
+    public Vector getRoleSelectionDefenderSpawnpoint(){
+        return parseVector(mainConfig.getConfigurationSection("role_selection.defender_spawnpoint"));
+    }
+
     private void loadMapConfigs(){
         mapConfigs.clear();
         ConfigurationSection mapsSection = mapConfigFile.getConfigurationSection("maps");
         if(mapsSection == null) return;
 
         for(String mapId : mapsSection.getKeys(false)){
-            ConfigurationSection mapSection = mapsSection.getConfigurationSection(mapId);
-            if(mapSection == null) continue;
-
-            String name = mapSection.getString("name", mapId);
-            String description = mapSection.getString("description", "No description provided.");
-            String icon = mapSection.getString("icon", "PAPER");
-            int maxTickets = mapSection.getInt("max_tickets", 50);
-            int initialTickets = mapSection.getInt("initial_tickets", 100);
-            if(maxTickets < 0 || initialTickets < 0){
-                throw new IllegalStateException("Max and initial number of tickets cannot be nagative!");
+            try{
+                loadMapConfig(mapId, mapsSection.getConfigurationSection(mapId));
             }
-            if(maxTickets < initialTickets) initialTickets = maxTickets;
-            int attackerRespawnTime = mapSection.getInt("attacker_respawn_time", 40);
-            int defenderRespawnTime = mapSection.getInt("defender_respawn_time", 80);
-            if(attackerRespawnTime < 0 || defenderRespawnTime < 0){
-                throw new IllegalStateException("Attacker respawn time or defender respawn time cannot be negative!");
+            catch (Exception e){
+                //该地图配置出错：跳过这张地图并记录日志，不影响其他地图加载
+                plugin.getLogger().warning("Failed to load map config '" + mapId + "', this map will be skipped. Reason: " + e.getMessage());
             }
-            String world =  mapSection.getString("world", "overworld");
-
-            Map<String, List<String>> roles = loadRoles(mapSection);
-            List<String> attackerRoles = roles.getOrDefault("attacker", new ArrayList<>());
-            List<String> defenderRoles = roles.getOrDefault("defender", new ArrayList<>());
-
-            List<Sector> sectors = loadSectors(mapSection);
-
-            mapConfigs.put(mapId, new MapConfig(
-                    mapId, name, description, icon, maxTickets, initialTickets,
-                    attackerRespawnTime, defenderRespawnTime,
-                    world, attackerRoles, defenderRoles, sectors
-            ));
-
         }
+    }
+
+    //加载单张地图；任一步骤出错则抛出异常，由 loadMapConfigs 捕获后跳过该地图
+    private void loadMapConfig(String mapId, ConfigurationSection mapSection){
+        if(mapSection == null) return;
+
+        String name = mapSection.getString("name", mapId);
+        String description = mapSection.getString("description", "No description provided.");
+        String icon = mapSection.getString("icon", "PAPER");
+        int maxTickets = mapSection.getInt("max_tickets", 50);
+        int initialTickets = mapSection.getInt("initial_tickets", 100);
+        if(maxTickets < 0 || initialTickets < 0){
+            throw new IllegalStateException("Max and initial number of tickets cannot be nagative!");
+        }
+        if(maxTickets < initialTickets) initialTickets = maxTickets;
+        int attackerRespawnTime = mapSection.getInt("attacker_respawn_time", 40);
+        int defenderRespawnTime = mapSection.getInt("defender_respawn_time", 80);
+        if(attackerRespawnTime < 0 || defenderRespawnTime < 0){
+            throw new IllegalStateException("Attacker respawn time or defender respawn time cannot be negative!");
+        }
+        String world =  mapSection.getString("world", "overworld");
+        Vector spectatorSpawnpoint = parseVector(mapSection.getConfigurationSection("spectator_spawnpoint"));
+
+        Map<String, List<String>> roles = loadRoles(mapSection);
+        List<String> attackerRoles = roles.getOrDefault("attacker", new ArrayList<>());
+        List<String> defenderRoles = roles.getOrDefault("defender", new ArrayList<>());
+
+        List<Sector> sectors = loadSectors(mapSection);
+
+        mapConfigs.put(mapId, new MapConfig(
+                mapId, name, description, icon, maxTickets, initialTickets,
+                attackerRespawnTime, defenderRespawnTime,
+                world, spectatorSpawnpoint, attackerRoles, defenderRoles, sectors
+        ));
     }
 
     private Map<String, List<String>> loadRoles(ConfigurationSection mapSection){
@@ -171,31 +206,25 @@ public class ConfigManager {
 
             String id = sectorSection.getString("id");
             String name = sectorSection.getString("name", id);
-            Region region = parseRegion(sectorSection.getConfigurationSection("region"));
-            int preheatTime =  sectorSection.getInt("preheat_time", 40);
-            int captureTime =  sectorSection.getInt("capture_time", 200);
-            if(preheatTime < 0 || captureTime < 0){
-                throw new IllegalStateException("Preheat and Capture time cannot be negative!");
-            }
-            int timeLimit =   sectorSection.getInt("time_limit", 2400);
+            int timeLimit = sectorSection.getInt("time_limit", 2400);
             if(timeLimit < 0){
                 throw new IllegalStateException("Time limit cannot be negative!");
             }
             int ticketReward = sectorSection.getInt("ticket_reward", 20);
 
-            Region attackerSpawn = parseRegion(sectorSection.getConfigurationSection("attacker_spawn_region"));
-            Region defenderSpawn = parseRegion(sectorSection.getConfigurationSection("defender_spawn_region"));
-            Region attackerActive = parseRegion(sectorSection.getConfigurationSection("attacker_active_region"));
-            Region defenderActive = parseRegion(sectorSection.getConfigurationSection("defender_active_region"));
+            List<BombConfig> bombs = parseBombs(sectorSection);
+
+            CubeRegion attackerSpawn = parseCubeRegion(sectorSection.getConfigurationSection("attacker_spawn_region"));
+            CubeRegion defenderSpawn = parseCubeRegion(sectorSection.getConfigurationSection("defender_spawn_region"));
+            CubeRegion attackerActive = parseCubeRegion(sectorSection.getConfigurationSection("attacker_active_region"));
+            CubeRegion defenderActive = parseCubeRegion(sectorSection.getConfigurationSection("defender_active_region"));
 
             Sector sector = Sector.Builder.create()
                     .id(id)
                     .name(Component.text(name))
-                    .region(region)
-                    .preheatTime(preheatTime)
-                    .captureTime(captureTime)
                     .timeLimit(timeLimit)
                     .ticketReward(ticketReward)
+                    .bombs(bombs)
                     .attackerSpawnRegion(attackerSpawn)
                     .defenderSpawnRegion(defenderSpawn)
                     .attackerActiveRegion(attackerActive)
@@ -223,12 +252,41 @@ public class ConfigManager {
         return section;
     }
 
-    private Region parseRegion(ConfigurationSection section){
+    private List<BombConfig> parseBombs(ConfigurationSection objectiveSection){
+        List<BombConfig> bombs = new ArrayList<>();
+        Set<String> seenIds = new HashSet<>();
+        List<Map<?, ?>> bombList = objectiveSection.getMapList("bombs");
+        for(Map<?, ?> obj : bombList){
+            ConfigurationSection bombSection = toConfigurationSection(obj);
+
+            String bombId = bombSection.getString("id");
+            if(bombId == null || !seenIds.add(bombId)){
+                throw new IllegalStateException("Bomb id is missing or duplicated in objective!");
+            }
+            String bombName = bombSection.getString("name", bombId);
+            CubeRegion region = parseCubeRegion(bombSection.getConfigurationSection("region"));
+            int plantTime = bombSection.getInt("plant_time", 80);
+            int fuseTime = bombSection.getInt("fuse_time", 1200);
+            int defuseTime = bombSection.getInt("defuse_time", 100);
+
+            bombs.add(BombConfig.Builder.create()
+                    .id(bombId)
+                    .name(Component.text(bombName))
+                    .region(region)
+                    .plantTime(plantTime)
+                    .fuseTime(fuseTime)
+                    .defuseTime(defuseTime)
+                    .build());
+        }
+        return bombs;
+    }
+
+    private CubeRegion parseCubeRegion(ConfigurationSection section){
         if(section == null) return null;
         Vector start = parseVector(section.getConfigurationSection("start"));
         Vector end = parseVector(section.getConfigurationSection("end"));
         if(start == null || end == null) return null;
-        return Region.createFromCorners(start, end);
+        return CubeRegion.createFromCorners(start, end);
     }
 
     private Vector parseVector(ConfigurationSection section){

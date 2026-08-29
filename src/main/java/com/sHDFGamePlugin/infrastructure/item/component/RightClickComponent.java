@@ -1,13 +1,11 @@
 package com.sHDFGamePlugin.infrastructure.item.component;
 
-import org.bukkit.event.block.Action;
 import org.bukkit.event.player.PlayerInteractEvent;
 
 import java.util.function.Consumer;
 
+/** 右键点击组件 */
 public class RightClickComponent implements ItemComponent {
-
-    public final static String TYPE = "right_click";
 
     private Consumer<PlayerInteractEvent> handler;
 
@@ -21,10 +19,5 @@ public class RightClickComponent implements ItemComponent {
         if (event.getAction().isRightClick()) {
             handler.accept(event);
         }
-    }
-
-    @Override
-    public String getType() {
-        return TYPE;
     }
 }

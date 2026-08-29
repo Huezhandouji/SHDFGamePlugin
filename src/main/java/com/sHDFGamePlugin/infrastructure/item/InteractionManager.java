@@ -1,5 +1,6 @@
 package com.sHDFGamePlugin.infrastructure.item;
 
+import com.sHDFGamePlugin.core.GameContext;
 import com.sHDFGamePlugin.infrastructure.item.component.InventoryClickComponent;
 import com.sHDFGamePlugin.infrastructure.item.component.LeftClickComponent;
 import org.bukkit.event.EventHandler;
@@ -46,6 +47,9 @@ public class InteractionManager implements Listener {
 
     public void registerGameItem(String id, GameItem gameItem){
         if(id == null || gameItem == null) return;
+        if(gameItemSet.containsKey(id)){
+            GameContext.getInstance().getPlugin().getLogger().warning("[InteractionManager] GameItem '" + id + "' is already registered, it will be overwritten!");
+        }
         gameItemSet.put(id, gameItem);
     }
 
@@ -127,7 +131,7 @@ public class InteractionManager implements Listener {
                 event.setCancelled(true);
             }
             if((event.getClick() == ClickType.LEFT || event.getClick() == ClickType.SHIFT_LEFT)
-                    && gameItem.getComponent(InventoryClickComponent.TYPE) != null){
+                    && gameItem.getComponent(InventoryClickComponent.class) != null){
                 gameItem.handleInventoryClick(event);
             }
         }

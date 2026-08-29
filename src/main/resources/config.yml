@@ -10,14 +10,24 @@ waiting:
   # true: 加入后为观战者，需手动选队
   # false: 加入后为 UNKNOWN，等待分配
   default_side_after_join_spectator_or_unknown: true
-  # 是否需要全部玩家准备才能开始
+  # 是否需全员准备
   require_ready: true
+  # 大厅出生点（等待阶段玩家聚集点）
+  lobby_spawnpoint: { x: 0.0, y: 64.0, z: 0.0 }
+
+# ====== 角色选择阶段配置 ======
+role_selection:
+  # 选择倒计时（tick），0 = 必须全部手动选完
+  duration: 600
+  # 倒计时结束自动随机分配
+  auto_assign: true
+  # 角色选择结束后，双方进入对局的初始出生点
+  attacker_spawnpoint: { x: -30.0, y: 65.0, z: 200.0 }
+  defender_spawnpoint: { x: 30.0, y: 65.0, z: 200.0 }
 
 # ====== 对局阶段配置 ======
 playing:
-  # 重生后无敌时间（tick），60 = 3秒
-  invulnerability: 60
-  # 是否允许同队选择重复角色
+  # 是否允许同阵营选择重复角色
   allow_duplicate_roles: false
 
 # ====== 可用地图列表 ======

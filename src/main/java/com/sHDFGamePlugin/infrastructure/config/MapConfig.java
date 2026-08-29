@@ -1,6 +1,7 @@
 package com.sHDFGamePlugin.infrastructure.config;
 
 import com.sHDFGamePlugin.domain.sector.Sector;
+import org.bukkit.util.Vector;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -17,6 +18,7 @@ public class MapConfig {
     private final int attackerRespawnTime;
     private final int defenderRespawnTime;
     private final String world;
+    private final Vector spectatorSpawnpoint;
     private final List<String> attackerRoles;
     private final List<String> defenderRoles;
 
@@ -25,7 +27,8 @@ public class MapConfig {
     public MapConfig(String id, String name, String description,
                      String icon, int maxTickets, int initialTickets,
                      int attackerRespawnTime, int defenderRespawnTime,
-                     String world, List<String> attackerRoles, List<String> defenderRoles,
+                     String world, Vector spectatorSpawnpoint,
+                     List<String> attackerRoles, List<String> defenderRoles,
                      List<Sector> sectors) {
 
         this.id = id;
@@ -37,6 +40,7 @@ public class MapConfig {
         this.attackerRespawnTime = attackerRespawnTime;
         this.defenderRespawnTime = defenderRespawnTime;
         this.world = world;
+        this.spectatorSpawnpoint = spectatorSpawnpoint;
         this.attackerRoles = attackerRoles;
         this.defenderRoles = defenderRoles;
         this.sectors = sectors;
@@ -78,6 +82,10 @@ public class MapConfig {
 
     public String getWorld() {
         return world;
+    }
+
+    public Vector getSpectatorSpawnpoint() {
+        return spectatorSpawnpoint;
     }
 
     public List<String> getAttackerRoles() {

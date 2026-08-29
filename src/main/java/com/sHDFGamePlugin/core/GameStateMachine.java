@@ -16,6 +16,7 @@ public class GameStateMachine {
         phases = new EnumMap<>(GameState.class);
         phases.put(GameState.IDLE, IdlePhase.getInstance());
         phases.put(GameState.WAITING, WaitingPhase.getInstance());
+        phases.put(GameState.ROLE_SELECTING, RoleSelectingPhase.getInstance());
         phases.put(GameState.PLAYING, PlayingPhase.getInstance());
         phases.put(GameState.FINISHED, FinishedPhase.getInstance());
     }

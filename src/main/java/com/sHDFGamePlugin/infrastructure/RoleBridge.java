@@ -5,10 +5,13 @@ import com.sHDFGamePlugin.domain.team.TeamManager;
 import com.sHDFGamePlugin.infrastructure.config.ConfigManager;
 import com.sHDFGamePlugin.infrastructure.config.MapConfig;
 import com.shadowHunterRolesPlugin.api.RoleAPI;
+import net.kyori.adventure.text.Component;
 import org.bukkit.Bukkit;
+import org.bukkit.Material;
 import org.bukkit.entity.Player;
 
 import java.util.*;
+import java.util.List;
 
 public class RoleBridge {
 
@@ -149,5 +152,22 @@ public class RoleBridge {
     public String getPlayerRole(UUID uuid){
         return roleAPI.getPlayerRoleId(uuid);
     }
-//roleAPI所有方法现已支持使用uuid作为参数
+
+    //查询角色描述
+    public Component getRoleDisplayName(String roleId){
+        return roleAPI.getRoleDisplayName(roleId);
+    }
+
+    public Component getRoleDescription(String roleId){
+        return roleAPI.getRoleDescription(roleId);
+    }
+
+    public Material getRoleIcon(String roleId){
+        return roleAPI.getRoleIcon(roleId);
+    }
+
+    //查询角色是否存在
+    public boolean isValidRoleId(String roleId){
+        return roleAPI.isValidRoleId(roleId);
+    }
 }

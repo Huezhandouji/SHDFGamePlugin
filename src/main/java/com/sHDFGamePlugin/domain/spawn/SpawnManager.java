@@ -1,9 +1,10 @@
 package com.sHDFGamePlugin.domain.spawn;
 
 import com.sHDFGamePlugin.core.GameContext;
-import com.sHDFGamePlugin.domain.sector.Region;
+import com.sHDFGamePlugin.infrastructure.regionExpression.CubeRegion;
 import com.sHDFGamePlugin.domain.sector.Sector;
 import com.sHDFGamePlugin.domain.sector.SectorManager;
+import com.sHDFGamePlugin.domain.team.PlayerState;
 import com.sHDFGamePlugin.domain.team.PlayerStatus;
 import com.sHDFGamePlugin.domain.team.ShdfTeam;
 import com.sHDFGamePlugin.domain.team.TeamManager;
@@ -96,7 +97,7 @@ public class SpawnManager {
         Sector currentSector = SectorManager.getInstance().getCurrentSector();
         if(currentSector == null) return false;
 
-        Region spawnRegion;
+        CubeRegion spawnRegion;
         switch (pending.shdfTeam){
             case ATTACKER -> spawnRegion = currentSector.getAttackerSpawnRegion();
             case DEFENDER -> spawnRegion = currentSector.getDefenderSpawnRegion();
@@ -116,7 +117,8 @@ public class SpawnManager {
 
         PlayerStatus status = TeamManager.getInstance().getPlayerStatus(uuid);
         if(status == null) return false;
-        status.setInBattle(true);
+        //部署完成，玩家进入战斗状态
+        status.setState(PlayerState.IN_BATTLE);
 
         //设置角色
         boolean roleApplied = RoleBridge.getInstance().setPlayerRole(uuid, roleId);

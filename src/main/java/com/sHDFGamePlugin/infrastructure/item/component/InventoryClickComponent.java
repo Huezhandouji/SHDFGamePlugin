@@ -1,14 +1,12 @@
 package com.sHDFGamePlugin.infrastructure.item.component;
 
-import org.bukkit.event.block.Action;
-import org.bukkit.event.inventory.InventoryAction;
 import org.bukkit.event.inventory.InventoryClickEvent;
 
 import java.util.function.Consumer;
 
+/** 物品栏点击组件（区分左/右/Shift+左/Shift+右） */
 public class InventoryClickComponent implements ItemComponent {
 
-    public final static String TYPE = "inventory_click";
     private Consumer<InventoryClickEvent> leftClickHandler;
     private Consumer<InventoryClickEvent> leftShiftClickHandler;
     private Consumer<InventoryClickEvent> rightClickHandler;
@@ -61,10 +59,5 @@ public class InventoryClickComponent implements ItemComponent {
                 return;
             }
         }
-    }
-
-    @Override
-    public String getType() {
-        return TYPE;
     }
 }

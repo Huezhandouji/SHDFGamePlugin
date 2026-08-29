@@ -2,6 +2,7 @@ package com.sHDFGamePlugin.domain.team;
 
 import com.sHDFGamePlugin.infrastructure.GameEventBus;
 import com.sHDFGamePlugin.infrastructure.event.TeamChangedEvent;
+import org.jetbrains.annotations.NotNull;
 
 import java.util.*;
 import java.util.stream.Collectors;
@@ -22,12 +23,16 @@ public class TeamManager {
         players.clear();
     }
 
-    public void addPlayer(UUID uuid, ShdfTeam shdfTeam){
-        players.put(uuid, new PlayerStatus(uuid, shdfTeam));
+    public void addPlayer(@NotNull UUID uuid, @NotNull ShdfTeam shdfTeam, @NotNull PlayerState playerState) {
+        players.put(uuid, new PlayerStatus(uuid, shdfTeam, playerState));
     }
 
     public void removePlayer(UUID uuid){
         players.remove(uuid);
+    }
+
+    public void removeAllPlayers(){
+        players.clear();
     }
 
     public ShdfTeam getTeam(UUID uuid){

@@ -1,16 +1,31 @@
 package com.sHDFGamePlugin.domain.sector;
 
-import com.sHDFGamePlugin.domain.team.PlayerStatus;
-import com.sHDFGamePlugin.domain.team.ShdfTeam;
-import com.sHDFGamePlugin.domain.team.TeamManager;
+import com.sHDFGamePlugin.core.GameContext;
 import com.sHDFGamePlugin.infrastructure.GameEventBus;
-import com.sHDFGamePlugin.infrastructure.event.SectorCapturedEvent;
-import org.bukkit.Bukkit;
-import org.bukkit.entity.Player;
+import com.sHDFGamePlugin.infrastructure.config.BombConfig;
+import com.sHDFGamePlugin.infrastructure.event.BombDefusedEvent;
+import com.sHDFGamePlugin.infrastructure.event.BombExplodedEvent;
+import com.sHDFGamePlugin.infrastructure.event.BombPlantedEvent;
+import io.papermc.paper.threadedregions.scheduler.ScheduledTask;
 
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.UUID;
+import java.util.Map;
+import java.util.function.Consumer;
 
+/**
+ * 据点与炸弹管理。
+ * <p>
+ * 职责：
+ * - 管理当前据点的多个炸弹（每个炸弹独立状态 UNPLANTED -> PLANTED -> EXPLODED，拆弹成功回 UNPLANTED）；
+ * - 每个炸弹各自维护引信倒计时，归零时发布 {@link BombExplodedEvent}；
+ * - 维护据点时限（进攻方时间限制），由 {@link SectorTimeLimit} 驱动；
+ * - 提供据点推进接口 {@link #advanceToNextSector()}，由 PlayingPhase 在全部炸弹爆炸后调用。
+ * <p>
+ * 不处理玩家互动细节（站位、进度累积、打断检测），这些属于 PlayingPhase。
+ */
 public class SectorManager {
 
     private static final SectorManager INSTANCE = new SectorManager();
@@ -19,11 +34,10 @@ public class SectorManager {
     private int currentIndex;
     private boolean allCaptured;
 
-    //以tick计
-    private int preheatProgress;
-    private int captureProgress;
-    private boolean preheatDone;
+    //当前据点的运行时炸弹：bombId -> ActiveBomb（LinkedHashMap 保持配置顺序）
+    private final Map<String, ActiveBomb> activeBombs = new LinkedHashMap<>();
 
+    //据点时限（进攻方时间限制）
     private SectorTimeLimit currentTimeLimit;
 
     private SectorManager(){}
@@ -37,9 +51,6 @@ public class SectorManager {
         this.sectors = sectors;
         this.currentIndex = 0;
         this.allCaptured = false;
-        this.preheatProgress = 0;
-        this.captureProgress = 0;
-        this.preheatDone = false;
 
         if(sectors != null && !sectors.isEmpty()){
             activateCurrentSector();
@@ -49,49 +60,83 @@ public class SectorManager {
         }
     }
 
-    public void update(){
-        if(allCaptured || sectors == null || sectors.isEmpty()) return;
+    // ==================== 炸弹查询 ====================
 
-        Sector currentSector = getCurrentSector();
-        if(currentSector == null) return;
-
-        int attackerCount = countAliveCombatantsInRegion(ShdfTeam.ATTACKER, currentSector.getRegion());
-        int defenderCount = countAliveCombatantsInRegion(ShdfTeam.DEFENDER, currentSector.getRegion());
-
-        //当进攻方占优势
-        if(attackerCount > defenderCount){
-            if(!preheatDone){
-                preheatProgress += 1;
-                if(preheatProgress >= currentSector.getPreheatTime()){
-                    preheatDone = true;
-                    preheatProgress = 0;
-                }
-            }
-            else{
-                captureProgress += 1;
-                if(captureProgress >= currentSector.getCaptureTime()){
-                    captureProgress = 0;
-                    preheatDone = false;
-                    onSectorCaptured(currentSector);
-                }
-            }
-        }
-        else{
-            //当进攻方不再占优
-            preheatDone = false;
-            preheatProgress = 0;
-        }
+    /** 当前据点的炸弹配置列表（用于 GUI 展示，保持配置顺序） */
+    public List<BombConfig> getCurrentSectorBombs(){
+        Sector current = getCurrentSector();
+        return current != null ? current.getBombs() : List.of();
     }
 
-    private void onSectorCaptured(Sector sector){
-        //发布一个事件，由PlayingPhase监听
-        GameEventBus.publish(new SectorCapturedEvent(sector));
+    /** 当前据点的全部运行时炸弹（不可变视图，保持配置顺序） */
+    public List<ActiveBomb> getActiveBombs(){
+        return Collections.unmodifiableList(new ArrayList<>(activeBombs.values()));
+    }
 
-        //停止时限倒计时
+    /** 按 bombId 获取运行时炸弹；未知 id 返回 null */
+    public ActiveBomb getActiveBomb(String bombId){
+        return activeBombs.get(bombId);
+    }
+
+    /** 按 bombId 获取炸弹状态；未知 id 返回 null */
+    public BombState getBombState(String bombId){
+        ActiveBomb bomb = activeBombs.get(bombId);
+        return bomb != null ? bomb.getState() : null;
+    }
+
+    /** 按 bombId 获取引信剩余时间（tick）；未知 id 或未安放时为 0 */
+    public int getBombFuseRemaining(String bombId){
+        ActiveBomb bomb = activeBombs.get(bombId);
+        return bomb != null ? bomb.getFuseRemaining() : 0;
+    }
+
+    /** 当前据点是否全部炸弹已爆炸（空列表视为 false） */
+    public boolean isAllBombsExploded(){
+        if(activeBombs.isEmpty()) return false;
+        for(ActiveBomb bomb : activeBombs.values()){
+            if(bomb.getState() != BombState.EXPLODED) return false;
+        }
+        return true;
+    }
+
+    // ==================== 炸弹状态切换 ====================
+
+    /** 进攻方安放进度完成后调用：指定炸弹 UNPLANTED -> PLANTED，并启动其引信 */
+    public boolean onBombPlantSuccess(String bombId){
+        ActiveBomb bomb = activeBombs.get(bombId);
+        if(bomb == null) return false;
+        if(bomb.getState() != BombState.UNPLANTED) return false;
+
+        bomb.plant();
+        startBombFuse(bomb);
+        GameEventBus.publish(new BombPlantedEvent(getCurrentSector(), bomb.getConfig()));
+        return true;
+    }
+
+    /** 防守方拆弹进度完成后调用：指定炸弹 PLANTED -> UNPLANTED，取消其引信 */
+    public boolean onBombDefuseSuccess(String bombId){
+        ActiveBomb bomb = activeBombs.get(bombId);
+        if(bomb == null) return false;
+        if(bomb.getState() != BombState.PLANTED) return false;
+
+        bomb.defuse();
+        GameEventBus.publish(new BombDefusedEvent(getCurrentSector(), bomb.getConfig()));
+        return true;
+    }
+
+    // ==================== 据点推进 ====================
+
+    /** 由 PlayingPhase 在确认全部炸弹爆炸后调用：推进到下一个据点 */
+    public void advanceToNextSector(){
+        if(allCaptured) return;
+
+        //停止当前据点时限
         if(currentTimeLimit != null){
             currentTimeLimit.stop();
             currentTimeLimit = null;
         }
+
+        clearActiveBombs();
 
         if(currentIndex + 1 < sectors.size()){
             currentIndex += 1;
@@ -102,34 +147,53 @@ public class SectorManager {
         }
     }
 
+    // ==================== 内部 ====================
+
     private void activateCurrentSector(){
         Sector current = getCurrentSector();
         if(current == null) return;
 
-        preheatProgress = 0;
-        captureProgress = 0;
-        preheatDone = false;
+        //重建运行时炸弹
+        clearActiveBombs();
+        for(BombConfig bombConfig : current.getBombs()){
+            activeBombs.put(bombConfig.getId(), new ActiveBomb(bombConfig));
+        }
 
-        //启动倒计时
+        //启动据点时限
         currentTimeLimit = new SectorTimeLimit(current);
         currentTimeLimit.start();
     }
 
-    private int countAliveCombatantsInRegion(ShdfTeam shdfTeam, Region region){
-        int count = 0;
-        TeamManager teamManager = TeamManager.getInstance();
-        for(UUID uuid : teamManager.getAllPlayersUuidsInTeam(shdfTeam)){
-            Player player = Bukkit.getPlayer(uuid);
-            if(player == null || player.isDead() || !player.isOnline()) continue;
-            PlayerStatus status = teamManager.getPlayerStatus(uuid);
-            if(!status.isInBattle()) continue;
-
-            if(region.contains(player.getLocation().toVector())){
-                count += 1;
-            }
+    private void clearActiveBombs(){
+        for(ActiveBomb bomb : activeBombs.values()){
+            bomb.stopFuse();
         }
-        return count;
+        activeBombs.clear();
     }
+
+    private void startBombFuse(ActiveBomb bomb){
+        bomb.stopFuse();
+        ScheduledTask task = GameContext.getInstance().getPlugin().getServer().getGlobalRegionScheduler()
+                .runAtFixedRate(GameContext.getInstance().getPlugin(),
+                        new Consumer<ScheduledTask>() {
+                            @Override
+                            public void accept(ScheduledTask scheduledTask) {
+                                if(bomb.getState() != BombState.PLANTED){
+                                    scheduledTask.cancel();
+                                    return;
+                                }
+                                bomb.tickFuse();
+                                if(bomb.getFuseRemaining() <= 0){
+                                    bomb.explode();
+                                    GameEventBus.publish(new BombExplodedEvent(getCurrentSector(), bomb.getConfig()));
+                                }
+                            }
+                        },
+                        0L, 1L);
+        bomb.setFuseTask(task);
+    }
+
+    // ==================== 查询与清理 ====================
 
     public Sector getCurrentSector(){
         if(sectors == null || currentIndex < 0 || currentIndex >= sectors.size()) return null;
@@ -140,23 +204,12 @@ public class SectorManager {
         return allCaptured;
     }
 
-    public int getPreheatProgress(){
-        return preheatProgress;
-    }
-
-    public int getCaptureProgress(){
-        return captureProgress;
-    }
-
-    public boolean isPreheatDone(){
-        return preheatDone;
-    }
-
     public int getCurrentTimeLimitRemaining(){
         return currentTimeLimit != null ? currentTimeLimit.getRemainingTicks() : 0;
     }
 
     public void cleanup(){
+        clearActiveBombs();
         if(currentTimeLimit != null){
             currentTimeLimit.stop();
             currentTimeLimit = null;
@@ -164,8 +217,5 @@ public class SectorManager {
         sectors = null;
         allCaptured = false;
         currentIndex = 0;
-        preheatProgress = 0;
-        captureProgress = 0;
-        preheatDone = false;
     }
 }
