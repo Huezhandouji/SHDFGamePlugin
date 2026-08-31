@@ -3,6 +3,11 @@ package com.sHDFGamePlugin.domain.ticket;
 import com.sHDFGamePlugin.infrastructure.GameEventBus;
 import com.sHDFGamePlugin.infrastructure.event.TicketDepletedEvent;
 
+/**
+ * 票数管理（单例）：管理进攻方票数。
+ * <p>
+ * 死亡扣票、炸弹爆炸加票；票数耗尽时发布 {@link TicketDepletedEvent} 结束对局。
+ */
 public class TicketManager {
 
     private static final TicketManager INSTANCE = new TicketManager();

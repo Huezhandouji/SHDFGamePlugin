@@ -8,6 +8,7 @@ import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
 import org.bukkit.event.player.PlayerQuitEvent;
 
+/** Bukkit 玩家退出事件 -> 游戏事件总线（薄适配层） */
 public class PlayerQuitListener implements Listener {
 
     @EventHandler

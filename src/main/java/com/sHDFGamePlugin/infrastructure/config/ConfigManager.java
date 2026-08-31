@@ -13,6 +13,11 @@ import org.bukkit.util.Vector;
 import java.io.File;
 import java.util.*;
 
+/**
+ * 配置管理（单例）：加载 config.yml（全局设置）与 maps.yml（地图/据点/炸弹配置）。
+ * <p>
+ * 单张地图配置出错时跳过该地图并记录日志，不影响其他地图加载。
+ */
 public class ConfigManager {
 
     private static final ConfigManager INSTANCE = new ConfigManager();
@@ -51,6 +56,31 @@ public class ConfigManager {
         }
 
         plugin.getLogger().info("Configuration loaded!");
+    }
+
+    /**
+     * 重新加载 config.yml 与 maps.yml（/sg config reload 调用）。
+     * <p>
+     * 单张地图配置出错时仍由 loadMapConfigs 跳过并记录日志；
+     * 当前选中的地图若已不存在，则回退到第一张可用地图。
+     */
+    public void reload(){
+        //config.yml
+        plugin.reloadConfig();
+        mainConfig = plugin.getConfig();
+
+        //maps.yml
+        File mapsFile = new File(plugin.getDataFolder(), "maps.yml");
+        mapConfigFile = YamlConfiguration.loadConfiguration(mapsFile);
+        loadMapConfigs();
+
+        //保持当前选中的地图；若已被删除则回退到第一张可用地图
+        if(selectedMapId == null || !mapConfigs.containsKey(selectedMapId)){
+            List<String> mapNames = getMapNames();
+            selectedMapId = mapNames.isEmpty() ? null : mapNames.getFirst();
+        }
+
+        plugin.getLogger().info("Configuration reloaded!");
     }
 
     public MapConfig getSelectedMapConfig(){

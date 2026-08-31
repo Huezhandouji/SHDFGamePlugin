@@ -20,6 +20,11 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
 
+/**
+ * 重生/部署管理（单例）：玩家死亡后加入重生队列等待倒计时，倒计时结束可部署进场。
+ * <p>
+ * 部署时按当前据点的阵营出生区传送、恢复状态并应用角色。
+ */
 public class SpawnManager {
 
     private static final SpawnManager INSTANCE = new SpawnManager();

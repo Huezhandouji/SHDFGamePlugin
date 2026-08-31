@@ -10,7 +10,9 @@ depend:
   - ShadowHunterRolesPlugin
 
 commands:
-  shdf:
+  shdfgame:
     description: "游戏主命令"
-    usage: "/game <join|leave|ready|side|status>"
+    usage: "/sg <config ...>"
+    aliases:
+      - "sg"
     permission: "shadowhunter.game.player"

@@ -5,6 +5,7 @@ import org.bukkit.Particle;
 import org.bukkit.World;
 import org.bukkit.util.Vector;
 
+/** 粒子工具：用粒子可视化绘制区域边界（调试/表现用） */
 public class ParticleUtil {
 
     //用粒子绘制Region的8条边

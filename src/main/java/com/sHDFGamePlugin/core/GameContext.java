@@ -3,6 +3,11 @@ package com.sHDFGamePlugin.core;
 import com.sHDFGamePlugin.infrastructure.config.ConfigManager;
 import org.bukkit.plugin.java.JavaPlugin;
 
+/**
+ * 全局游戏上下文（单例容器）。
+ * <p>
+ * 持有插件实例与配置管理器，供各模块获取依赖。
+ */
 public class GameContext {
 
     private static final GameContext INSTANCE = new GameContext();

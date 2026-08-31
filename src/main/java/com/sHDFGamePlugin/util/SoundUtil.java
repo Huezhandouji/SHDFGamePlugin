@@ -7,6 +7,7 @@ import org.bukkit.entity.Player;
 
 import java.util.function.Consumer;
 
+/** 音效工具：播放组合音效（成功/失败反馈等） */
 public class SoundUtil {
 
     public static void playNoticeSuccessCombinedSound(Player player) {

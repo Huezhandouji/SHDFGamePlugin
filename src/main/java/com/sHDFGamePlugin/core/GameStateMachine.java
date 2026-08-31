@@ -5,6 +5,12 @@ import com.sHDFGamePlugin.phase.*;
 import java.util.EnumMap;
 import java.util.Map;
 
+/**
+ * 游戏状态机（单例）：管理 IDLE / WAITING / ROLE_SELECTING / PLAYING / FINISHED 的流转。
+ * <p>
+ * 每个 {@link GameState} 对应一个 {@link GamePhase}；切换状态时依次调用
+ * 旧状态的 onExit 与新状态的 onEnter。
+ */
 public class GameStateMachine {
 
     private static final GameStateMachine INSTANCE = new GameStateMachine();

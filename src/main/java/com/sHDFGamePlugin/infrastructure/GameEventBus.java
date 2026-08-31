@@ -6,6 +6,11 @@ import java.util.List;
 import java.util.Map;
 import java.util.function.Consumer;
 
+/**
+ * 游戏内部事件总线（静态）：按事件类型订阅/发布，{@link Subscription} 可取消。
+ * <p>
+ * 用于阶段/模块间解耦通信（玩家加入退出、炸弹状态、角色选择等）。
+ */
 public final class GameEventBus {
 
     private static final Map<Class<?>, List<Consumer<Object>>> listeners = new HashMap<>();
@@ -32,6 +37,7 @@ public final class GameEventBus {
     public static <T> void publish(T event) {
         List<Consumer<Object>> handlers = listeners.get(event.getClass());
         if (handlers == null) return;
+        //拷贝快照再遍历：允许处理器在回调中订阅/退订，不影响本次分发
         List<Consumer<Object>> snapshot = new ArrayList<>(handlers);
         for (Consumer<Object> handler : snapshot) {
             handler.accept(event);

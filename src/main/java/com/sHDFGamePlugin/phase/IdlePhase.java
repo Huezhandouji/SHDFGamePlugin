@@ -6,6 +6,7 @@ import com.sHDFGamePlugin.core.GameStateMachine;
 import com.sHDFGamePlugin.infrastructure.GameEventBus;
 import com.sHDFGamePlugin.infrastructure.event.ShdfPlayerJoinEvent;
 
+/** 空闲阶段：无玩家时驻留；首个玩家加入即转入 WAITING */
 public class IdlePhase implements GamePhase{
 
     private static final IdlePhase INSTANCE = new IdlePhase();

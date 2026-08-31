@@ -13,6 +13,11 @@ import org.bukkit.entity.Player;
 import java.util.*;
 import java.util.List;
 
+/**
+ * 角色桥接（单例）：封装外部插件 ShadowHunterRolesPlugin 的 RoleAPI。
+ * <p>
+ * 校验阵营角色池、管理角色占用（可选去重）、按玩家记录当前角色。
+ */
 public class RoleBridge {
 
     private static RoleBridge INSTANCE = new RoleBridge();

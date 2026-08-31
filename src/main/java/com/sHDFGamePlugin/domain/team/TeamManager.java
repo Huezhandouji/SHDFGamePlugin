@@ -7,6 +7,11 @@ import org.jetbrains.annotations.NotNull;
 import java.util.*;
 import java.util.stream.Collectors;
 
+/**
+ * 队伍管理（单例）：以 UUID 维护每个参战玩家的 {@link PlayerStatus}。
+ * <p>
+ * 提供阵营查询/切换、准备状态、人数统计、随机阵营自动分配等接口。
+ */
 public class TeamManager {
 
     private static TeamManager instance = new TeamManager();
@@ -48,6 +53,7 @@ public class TeamManager {
         if(oldShdfTeam == newShdfTeam) return;
 
         status.setTeam(newShdfTeam);
+        //切换成功，发布阵营变更事件
         GameEventBus.publish(new TeamChangedEvent(uuid, oldShdfTeam, newShdfTeam));
     }
 
@@ -90,6 +96,7 @@ public class TeamManager {
         return players.values().stream().anyMatch(status -> status.getTeam() == ShdfTeam.UNKNOWN);
     }
 
+    /** 把 UNKNOWN 阵营玩家随机分配到人数较少的阵营（角色选择阶段开始前调用） */
     public void autoAssignUnknownTeamPlayers(){
         List<UUID> unknowns = getAllPlayersUuidsInTeam(ShdfTeam.UNKNOWN);
         for(UUID uuid : unknowns){

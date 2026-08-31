@@ -7,6 +7,9 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
+/**
+ * 地图静态配置：由 maps.yml 解析而来，加载后不可变。
+ */
 public class MapConfig {
 
     private final String id;

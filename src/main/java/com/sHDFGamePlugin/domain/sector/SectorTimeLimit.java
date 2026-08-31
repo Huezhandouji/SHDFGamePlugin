@@ -8,6 +8,10 @@ import io.papermc.paper.threadedregions.scheduler.ScheduledTask;
 
 import java.util.function.Consumer;
 
+/**
+ * 据点时限倒计时：激活据点时启动，每 tick 递减；
+ * 归零时发布 {@link SectorTimeLimitExpiredEvent}（超时防守方胜）。
+ */
 public class SectorTimeLimit {
 
     private final Sector sector;

@@ -4,10 +4,10 @@ import java.util.UUID;
 
 public class PlayerStatus {
 
-    private final UUID uuid;
-    private ShdfTeam shdfTeam;
-    private boolean ready;
-    private PlayerState state;
+    private final UUID uuid;        // 玩家唯一标识
+    private ShdfTeam shdfTeam;      // 当前阵营
+    private boolean ready;          // 是否已准备（等待阶段使用）
+    private PlayerState state;      // 玩家当前游戏状态（WAITING/ROLE_SELECTING/DEPLOYING/IN_BATTLE）
 
     //新增：玩家整场选定的角色ID（ROLE_SELECTION 阶段记录，部署时使用）
     private String selectedRoleId;

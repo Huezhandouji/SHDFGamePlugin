@@ -11,6 +11,11 @@ import org.bukkit.entity.Player;
 
 import java.util.function.Consumer;
 
+/**
+ * GameItem 注册表（外观类）：统一提供注册、注销、查询与"创建并注册"的入口。
+ * <p>
+ * 实际存储于 {@link InteractionManager}。
+ */
 public final class GameItemRegistry {
 
     private GameItemRegistry(){}

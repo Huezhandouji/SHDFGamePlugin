@@ -2,6 +2,10 @@ package com.sHDFGamePlugin.infrastructure.regionExpression;
 
 import org.bukkit.util.Vector;
 
+/**
+ * 立方体区域：由原点（最小角坐标）和尺寸（各轴长度）定义；
+ * 角点模式由 {@link #createFromCorners} 换算为原点+尺寸。
+ */
 public class CubeRegion implements Region{
 
     private final Vector origin;

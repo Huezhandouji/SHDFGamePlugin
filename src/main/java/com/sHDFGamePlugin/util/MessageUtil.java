@@ -5,6 +5,7 @@ import net.kyori.adventure.text.format.NamedTextColor;
 import net.kyori.adventure.text.format.TextDecoration;
 import org.bukkit.entity.Player;
 
+/** 消息工具：统一格式的聊天消息发送 */
 public class MessageUtil {
 
     public static void sendMessageWithPostfix(Player player, Component message) {

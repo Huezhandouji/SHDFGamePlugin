@@ -48,14 +48,14 @@ public class WaitingPhase implements GamePhase {
     private static final WaitingPhase INSTANCE = new WaitingPhase();
 
     //GameItem的id
-    private final String teamSelectorId = "gameItem_waitingPhase_teamSelector";
-    private final String readyToggleId = "gameItem_waitingPhase_readyToggle";
-    private final String mapVoteId = "gameItem_waitingPhase_mapVote";
+    private static final String teamSelectorId = "gameItem_waitingPhase_teamSelector";
+    private static final String readyToggleId = "gameItem_waitingPhase_readyToggle";
+    private static final String mapVoteId = "gameItem_waitingPhase_mapVote";
 
-    private final String teamButtonAttackerId = "gameItem_waitingPhase_teamButtonAttacker";
-    private final String teamButtonDefenderId = "gameItem_waitingPhase_teamButtonDefender";
-    private final String teamButtonSpectatorId = "gameItem_waitingPhase_teamButtonSpectator";
-    private final String teamButtonUnknownId = "gameItem_waitingPhase_teamButtonUnknown";
+    private static final String teamButtonAttackerId = "gameItem_waitingPhase_teamButtonAttacker";
+    private static final String teamButtonDefenderId = "gameItem_waitingPhase_teamButtonDefender";
+    private static final String teamButtonSpectatorId = "gameItem_waitingPhase_teamButtonSpectator";
+    private static final String teamButtonUnknownId = "gameItem_waitingPhase_teamButtonUnknown";
     //事件订阅
     private GameEventBus.Subscription joinSubscription;
     private GameEventBus.Subscription rightClickSubscription;
@@ -66,7 +66,7 @@ public class WaitingPhase implements GamePhase {
     private Objective sidebarObjective;
 
     private WaitingCountdown countdown;
-    private final int COUNTDOWN_DURATION = 200;
+    private static final int COUNTDOWN_DURATION = 200;
 
     //玩家名队伍前缀
     private Team attackerTeam;
@@ -126,7 +126,6 @@ public class WaitingPhase implements GamePhase {
             quitSubscription.unsubscribe();
             quitSubscription = null;
         }
-        clearScoreboardTeam();
         clearScoreboardTeam();
         cancelCountdown("等待阶段结束");
         //阶段切换清理：关闭所有打开的游戏 GUI
@@ -256,71 +255,31 @@ public class WaitingPhase implements GamePhase {
     }
 
     private void registerGameItems(){
-        //快捷栏物品
-        GameItemRegistry.createAndRegister(
-                teamSelectorId,
-                builder -> {
-                    builder.canDrop(false).canMove(false)
-                            .rightClickHandler(event -> {
-                                GameEventBus.publish(new RightClickGameItemEvent(event.getPlayer(), teamSelectorId));
-                            });
-                }
-        );
-        GameItemRegistry.createAndRegister(
-                readyToggleId,
-                builder -> {
-                    builder.canDrop(false).canMove(false)
-                            .rightClickHandler(event -> {
-                                GameEventBus.publish(new RightClickGameItemEvent(event.getPlayer(), readyToggleId));
-                            });
-                }
-        );
-        GameItemRegistry.createAndRegister(
-                mapVoteId,
-                builder -> {
-                    builder.canDrop(false).canMove(false)
-                            .rightClickHandler(event -> {
-                                GameEventBus.publish(new RightClickGameItemEvent(event.getPlayer(), mapVoteId));
-                            });
-                }
-        );
-        //选队菜单物品
-        GameItemRegistry.createAndRegister(
-                teamButtonAttackerId,
-                builder -> {
-                    builder.canDrop(false).canMove(false)
-                            .inventoryClickHandler(event -> {
-                                GameEventBus.publish(new InventoryClickGameItemEvent((Player)event.getWhoClicked(), teamButtonAttackerId));
-                            });
-                }
-        );
-        GameItemRegistry.createAndRegister(
-                teamButtonDefenderId,
-                builder -> {
-                    builder.canDrop(false).canMove(false)
-                            .inventoryClickHandler(event -> {
-                                GameEventBus.publish(new InventoryClickGameItemEvent((Player)event.getWhoClicked(), teamButtonDefenderId));
-                            });
-                }
-        );
-        GameItemRegistry.createAndRegister(
-                teamButtonSpectatorId,
-                builder -> {
-                    builder.canDrop(false).canMove(false)
-                            .inventoryClickHandler(event -> {
-                                GameEventBus.publish(new InventoryClickGameItemEvent((Player)event.getWhoClicked(), teamButtonSpectatorId));
-                            });
-                }
-        );
-        GameItemRegistry.createAndRegister(
-                teamButtonUnknownId,
-                builder -> {
-                    builder.canDrop(false).canMove(false)
-                            .inventoryClickHandler(event -> {
-                                GameEventBus.publish(new InventoryClickGameItemEvent((Player)event.getWhoClicked(), teamButtonUnknownId));
-                            });
-                }
-        );
+        //快捷栏物品：右键发布事件
+        registerRightClickItem(teamSelectorId);
+        registerRightClickItem(readyToggleId);
+        registerRightClickItem(mapVoteId);
+        //选队菜单物品：库存点击发布事件
+        registerInventoryClickItem(teamButtonAttackerId);
+        registerInventoryClickItem(teamButtonDefenderId);
+        registerInventoryClickItem(teamButtonSpectatorId);
+        registerInventoryClickItem(teamButtonUnknownId);
+    }
+
+    /** 注册一个"右键即发布事件"的快捷栏物品 */
+    private void registerRightClickItem(String itemId){
+        GameItemRegistry.createAndRegister(itemId, builder ->
+                builder.canDrop(false).canMove(false)
+                        .rightClickHandler(event ->
+                                GameEventBus.publish(new RightClickGameItemEvent(event.getPlayer(), itemId))));
+    }
+
+    /** 注册一个"库存点击即发布事件"的菜单物品 */
+    private void registerInventoryClickItem(String itemId){
+        GameItemRegistry.createAndRegister(itemId, builder ->
+                builder.canDrop(false).canMove(false)
+                        .inventoryClickHandler(event ->
+                                GameEventBus.publish(new InventoryClickGameItemEvent((Player) event.getWhoClicked(), itemId))));
     }
 
     private void handlePlayerJoin(Player player){
@@ -425,54 +384,63 @@ public class WaitingPhase implements GamePhase {
         UUID playerId = player.getUniqueId();
         ShdfTeam shdfTeam = teamManager.getTeam(playerId);
         if(shdfTeam == null) return;
-        boolean isCombatant = shdfTeam.isCombatant();
 
         Inventory inv = player.getInventory();
-
-        ItemStack teamSelectorItem = new ItemStack(Material.NETHER_STAR);
-        ItemMeta teamSelectorItemMeta = teamSelectorItem.getItemMeta();
-        teamSelectorItemMeta.displayName(Component.text("选择阵营", NamedTextColor.GOLD, TextDecoration.BOLD));
-        teamSelectorItemMeta = GameItem.applyIdOnItemMeta(teamSelectorId, teamSelectorItemMeta);
-        teamSelectorItem.setItemMeta(teamSelectorItemMeta);
-        inv.setItem(0, teamSelectorItem);
+        inv.setItem(0, createTeamSelectorItem());
 
         //准备物品发给非观战者
-        if(isCombatant && ConfigManager.getInstance().isRequireReady()){
-            ItemStack readyItem;
-            if(teamManager.isReady(playerId)){
-                readyItem = new ItemStack(Material.DIAMOND_SWORD);
-                ItemMeta meta = readyItem.getItemMeta();
-                meta.displayName(Component.text("已经准备", NamedTextColor.GREEN, TextDecoration.BOLD));
-                readyItem.setItemMeta(meta);
-            }
-            else{
-                readyItem = new ItemStack(Material.WOODEN_SWORD);
-                ItemMeta meta = readyItem.getItemMeta();
-                meta.displayName(Component.text("尚未准备", NamedTextColor.RED, TextDecoration.BOLD));
-                readyItem.setItemMeta(meta);
-            }
-            ItemMeta meta = readyItem.getItemMeta();
-            meta.lore(List.of(
-                    Component.text("只有所有除了随机和观战阵营的玩家准备后, 游戏才会开始", NamedTextColor.GRAY)
-            ));
-            meta = GameItem.applyIdOnItemMeta(readyToggleId, meta);
-            readyItem.setItemMeta(meta);
-            inv.setItem(1, readyItem);
+        if(shdfTeam.isCombatant() && ConfigManager.getInstance().isRequireReady()){
+            inv.setItem(1, createReadyItem(teamManager.isReady(playerId)));
         }
         else{
             inv.setItem(1, null);
         }
 
-        ItemStack mapVoteItem = new ItemStack(Material.PAPER);
-        ItemMeta mapvoteItemMeta = mapVoteItem.getItemMeta();
-        mapvoteItemMeta.displayName(Component.text("票选地图", NamedTextColor.BLUE, TextDecoration.BOLD));
-        mapvoteItemMeta.lore(List.of(
+        inv.setItem(2, createMapVoteItem());
+    }
+
+    private ItemStack createTeamSelectorItem(){
+        ItemStack item = new ItemStack(Material.NETHER_STAR);
+        ItemMeta meta = item.getItemMeta();
+        meta.displayName(Component.text("选择阵营", NamedTextColor.GOLD, TextDecoration.BOLD));
+        meta = GameItem.applyIdOnItemMeta(teamSelectorId, meta);
+        item.setItemMeta(meta);
+        return item;
+    }
+
+    private ItemStack createReadyItem(boolean isReady){
+        ItemStack item;
+        if(isReady){
+            item = new ItemStack(Material.DIAMOND_SWORD);
+            ItemMeta meta = item.getItemMeta();
+            meta.displayName(Component.text("已经准备", NamedTextColor.GREEN, TextDecoration.BOLD));
+            item.setItemMeta(meta);
+        }
+        else{
+            item = new ItemStack(Material.WOODEN_SWORD);
+            ItemMeta meta = item.getItemMeta();
+            meta.displayName(Component.text("尚未准备", NamedTextColor.RED, TextDecoration.BOLD));
+            item.setItemMeta(meta);
+        }
+        ItemMeta meta = item.getItemMeta();
+        meta.lore(List.of(
+                Component.text("只有所有除了随机和观战阵营的玩家准备后, 游戏才会开始", NamedTextColor.GRAY)
+        ));
+        meta = GameItem.applyIdOnItemMeta(readyToggleId, meta);
+        item.setItemMeta(meta);
+        return item;
+    }
+
+    private ItemStack createMapVoteItem(){
+        ItemStack item = new ItemStack(Material.PAPER);
+        ItemMeta meta = item.getItemMeta();
+        meta.displayName(Component.text("票选地图", NamedTextColor.BLUE, TextDecoration.BOLD));
+        meta.lore(List.of(
                 Component.text("尚未实现", NamedTextColor.GRAY)
         ));
-        mapvoteItemMeta = GameItem.applyIdOnItemMeta(mapVoteId, mapvoteItemMeta);
-        mapVoteItem.setItemMeta(mapvoteItemMeta);
-        inv.setItem(2, mapVoteItem);
-
+        meta = GameItem.applyIdOnItemMeta(mapVoteId, meta);
+        item.setItemMeta(meta);
+        return item;
     }
 
     private void handleRightClickGameItem(RightClickGameItemEvent event){
@@ -509,8 +477,8 @@ public class WaitingPhase implements GamePhase {
         UUID uuid = player.getUniqueId();
         ShdfTeam currentShdfTeam = teamManager.getTeam(uuid);
 
-        //检查人数差是否可接受
-        if(targetShdfTeam == ShdfTeam.ATTACKER || targetShdfTeam == ShdfTeam.DEFENDER){
+        //检查人数差是否可接受（仅对战斗阵营生效）
+        if(targetShdfTeam.isCombatant()){
             int attackers = teamManager.getPlayerPopulationOnTeam(ShdfTeam.ATTACKER);
             int defenders = teamManager.getPlayerPopulationOnTeam(ShdfTeam.DEFENDER);
             if(currentShdfTeam == ShdfTeam.ATTACKER) attackers--;
@@ -552,87 +520,17 @@ public class WaitingPhase implements GamePhase {
     }
 
     private void openTeamSelectionGui(Player player){
-        ItemStack buttonAttacker = new ItemStack(Material.NETHERITE_SWORD);
-        {
-            ItemMeta meta = buttonAttacker.getItemMeta();
-            meta.displayName(Component.text("进攻方-SHADOW",  NamedTextColor.LIGHT_PURPLE, TextDecoration.BOLD));
-            List<Component> lore = new ArrayList<>();
-            lore.add(Component.text("这个队伍有 " + TeamManager.getInstance().getPlayerPopulationOnTeam(ShdfTeam.ATTACKER) + " 名玩家:", NamedTextColor.GRAY));
-            for(UUID pid : TeamManager.getInstance().getAllPlayersUuidsInTeam(ShdfTeam.ATTACKER)){
-                Player p = Bukkit.getPlayer(pid);
-                if(p == null){
-                    lore.add(Component.text("#无法通过uuid获取玩家", NamedTextColor.RED));
-                }
-                else{
-                    lore.add(Component.text(p.getName(), NamedTextColor.GRAY));
-                }
-            }
-            meta.lore(lore);
-            meta = GameItem.applyIdOnItemMeta(teamButtonAttackerId, meta);
-            buttonAttacker.setItemMeta(meta);
-        }
+        ItemStack buttonAttacker = buildTeamButton(Material.NETHERITE_SWORD, "进攻方-SHADOW", NamedTextColor.LIGHT_PURPLE,
+                teamButtonAttackerId, ShdfTeam.ATTACKER, null);
+        ItemStack buttonDefender = buildTeamButton(Material.BEDROCK, "防守方-SHADOW", NamedTextColor.YELLOW,
+                teamButtonDefenderId, ShdfTeam.DEFENDER, null);
+        ItemStack buttonSpectator = buildTeamButton(Material.PLAYER_HEAD, "观众", NamedTextColor.BLUE,
+                teamButtonSpectatorId, ShdfTeam.SPECTATOR,
+                List.of(Component.text("对局开始后, 你将以观战者加入!", NamedTextColor.YELLOW, TextDecoration.BOLD)));
+        ItemStack buttonUnknown = buildTeamButton(Material.STRUCTURE_VOID, "随机阵营", NamedTextColor.GREEN,
+                teamButtonUnknownId, ShdfTeam.UNKNOWN,
+                List.of(Component.text("你将会在游戏开始时被随机分配到进攻方或者防守方!", NamedTextColor.YELLOW, TextDecoration.BOLD)));
 
-        ItemStack buttonDefender = new ItemStack(Material.BEDROCK);
-        {
-            ItemMeta meta = buttonDefender.getItemMeta();
-            meta.displayName(Component.text("防守方-SHADOW",  NamedTextColor.YELLOW, TextDecoration.BOLD));
-            List<Component> lore = new ArrayList<>();
-            lore.add(Component.text("这个队伍有 " + TeamManager.getInstance().getPlayerPopulationOnTeam(ShdfTeam.DEFENDER) + " 名玩家:", NamedTextColor.GRAY));
-            for(UUID pid : TeamManager.getInstance().getAllPlayersUuidsInTeam(ShdfTeam.DEFENDER)){
-                Player p = Bukkit.getPlayer(pid);
-                if(p == null){
-                    lore.add(Component.text("#无法通过uuid获取玩家", NamedTextColor.RED));
-                }
-                else{
-                    lore.add(Component.text(p.getName(), NamedTextColor.GRAY));
-                }
-            }
-            meta.lore(lore);
-            meta = GameItem.applyIdOnItemMeta(teamButtonDefenderId, meta);
-            buttonDefender.setItemMeta(meta);
-        }
-
-        ItemStack buttonSpectator = new ItemStack(Material.PLAYER_HEAD);
-        {
-            ItemMeta meta = buttonSpectator.getItemMeta();
-            meta.displayName(Component.text("观众",  NamedTextColor.BLUE, TextDecoration.BOLD));
-            List<Component> lore = new ArrayList<>();
-            lore.add(Component.text("对局开始后, 你将以观战者加入!", NamedTextColor.YELLOW, TextDecoration.BOLD));
-            lore.add(Component.text("这个队伍有 " + TeamManager.getInstance().getPlayerPopulationOnTeam(ShdfTeam.SPECTATOR) + " 名玩家:", NamedTextColor.GRAY));
-            for(UUID pid : TeamManager.getInstance().getAllPlayersUuidsInTeam(ShdfTeam.SPECTATOR)){
-                Player p = Bukkit.getPlayer(pid);
-                if(p == null){
-                    lore.add(Component.text("#无法通过uuid获取玩家", NamedTextColor.RED));
-                }
-                else{
-                    lore.add(Component.text(p.getName(), NamedTextColor.GRAY));
-                }
-            }
-            meta.lore(lore);
-            meta = GameItem.applyIdOnItemMeta(teamButtonSpectatorId, meta);
-            buttonSpectator.setItemMeta(meta);
-        }
-
-        ItemStack buttonUnknown = new ItemStack(Material.STRUCTURE_VOID);
-        {
-            ItemMeta meta = buttonUnknown.getItemMeta();
-            meta.displayName(Component.text("随机阵营",  NamedTextColor.GREEN, TextDecoration.BOLD));
-            List<Component> lore = new ArrayList<>();
-            lore.add(Component.text("你将会在游戏开始时被随机分配到进攻方或者防守方!", NamedTextColor.YELLOW, TextDecoration.BOLD));
-            lore.add(Component.text("这个队伍有 " + TeamManager.getInstance().getPlayerPopulationOnTeam(ShdfTeam.UNKNOWN) + " 名玩家:", NamedTextColor.GRAY));
-            for(UUID pid : TeamManager.getInstance().getAllPlayersUuidsInTeam(ShdfTeam.UNKNOWN)){
-                Player p = Bukkit.getPlayer(pid);
-                if(p == null){
-                    lore.add(Component.text("#无法通过uuid获取玩家", NamedTextColor.RED));
-                }
-                else{
-                    lore.add(Component.text(p.getName(), NamedTextColor.GRAY));
-                }
-            }
-            meta.lore(lore);
-            meta = GameItem.applyIdOnItemMeta(teamButtonUnknownId, meta);
-            buttonUnknown.setItemMeta(meta);
-        }
         ChestGui gui = ChestGui.Builder.create()
                 .title(Component.text("选择阵营", NamedTextColor.YELLOW).decorate(TextDecoration.BOLD))
                 .rows(1)
@@ -642,6 +540,31 @@ public class WaitingPhase implements GamePhase {
                 .setSlot(3, buttonUnknown)
                 .build();
         gui.open(player);
+    }
+
+    /** 构建选队按钮：标题 + 队伍人数 + 在线成员列表（附带 GameItem id） */
+    private ItemStack buildTeamButton(Material material, String title, NamedTextColor color,
+                                      String gameItemId, ShdfTeam team, List<Component> extraLore){
+        ItemStack button = new ItemStack(material);
+        ItemMeta meta = button.getItemMeta();
+        meta.displayName(Component.text(title, color, TextDecoration.BOLD));
+
+        List<Component> lore = new ArrayList<>();
+        if(extraLore != null){
+            lore.addAll(extraLore);
+        }
+        lore.add(Component.text("这个队伍有 " + TeamManager.getInstance().getPlayerPopulationOnTeam(team) + " 名玩家:", NamedTextColor.GRAY));
+        for(UUID pid : TeamManager.getInstance().getAllPlayersUuidsInTeam(team)){
+            Player p = Bukkit.getPlayer(pid);
+            lore.add(p != null
+                    ? Component.text(p.getName(), NamedTextColor.GRAY)
+                    : Component.text("#无法通过uuid获取玩家", NamedTextColor.RED));
+        }
+
+        meta.lore(lore);
+        meta = GameItem.applyIdOnItemMeta(gameItemId, meta);
+        button.setItemMeta(meta);
+        return button;
     }
 
     private void toggleReady(Player player) {
@@ -656,13 +579,11 @@ public class WaitingPhase implements GamePhase {
             return;
         }
 
-        boolean curret = teamManager.isReady(uuid);
-        boolean newReady = !curret;
+        boolean current = teamManager.isReady(uuid);
+        boolean newReady = !current;
         teamManager.setReady(uuid, newReady);
 
-        Inventory inv = player.getInventory();
-
-        if(newReady == true) SoundUtil.playNoticeSuccessCombinedSound(player);
+        if(newReady) SoundUtil.playNoticeSuccessCombinedSound(player);
         else SoundUtil.playNoticeFailCombinedSound(player);
 
         updateWaitingGameItems(player);
