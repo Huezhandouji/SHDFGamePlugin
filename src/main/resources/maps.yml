@@ -16,13 +16,9 @@ maps:
 
     roles:
       attacker:
-        - "assault"
-        - "breacher"
-        - "medic"
+        - "red"
       defender:
-        - "sniper"
-        - "trapper"
-        - "shield"
+        - "meiqihezi"
 
     objectives:
       - id: "obj_1"

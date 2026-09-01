@@ -1,17 +1,24 @@
 # ====== 准备阶段配置 ======
 waiting:
   # 双方最少人数
-  min_population_per_side: 2
+  min_population_per_side: 1
   # 双方最大人数差
   max_side_diff: 1
   # 全局最大人数（含观战者）
   max_population: 16
+  # 开局模式:
+  #   require_ready: 除观战者外的参战人员全部准备后开始
+  #   auto: 无需准备，满足人数条件自动开始
+  mode: "auto"
+  # 准备阶段倒计时时长（tick），600 = 30 秒
+  # 请多设置1t，比如你要设置600，设成601
+  countdown_time: 601
   # 玩家加入后是否默认为观战者
   # true: 加入后为观战者，需手动选队
   # false: 加入后为 UNKNOWN，等待分配
   default_side_after_join_spectator_or_unknown: true
-  # 是否需全员准备
-  require_ready: true
+  # 等待阶段所在世界
+  world: "world"
   # 大厅出生点（等待阶段玩家聚集点）
   lobby_spawnpoint: { x: 0.0, y: 64.0, z: 0.0 }
 
@@ -19,8 +26,8 @@ waiting:
 role_selection:
   # 选择倒计时（tick），0 = 必须全部手动选完
   duration: 600
-  # 倒计时结束自动随机分配
-  auto_assign: true
+  # 角色选择阶段所在世界
+  world: "world"
   # 角色选择结束后，双方进入对局的初始出生点
   attacker_spawnpoint: { x: -30.0, y: 65.0, z: 200.0 }
   defender_spawnpoint: { x: 30.0, y: 65.0, z: 200.0 }
@@ -33,4 +40,3 @@ playing:
 # ====== 可用地图列表 ======
 maps:
   - "map_crossfire"
-  - "map_dust2"

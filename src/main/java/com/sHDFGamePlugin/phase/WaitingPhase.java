@@ -18,22 +18,18 @@ import com.sHDFGamePlugin.infrastructure.event.ShdfPlayerQuitEvent;
 import com.sHDFGamePlugin.infrastructure.gui.ChestGui;
 import com.sHDFGamePlugin.infrastructure.item.GameItem;
 import com.sHDFGamePlugin.infrastructure.item.GameItemRegistry;
+import com.sHDFGamePlugin.util.GameCountdown;
 import com.sHDFGamePlugin.util.MessageUtil;
 import com.sHDFGamePlugin.util.SoundUtil;
-import io.papermc.paper.threadedregions.scheduler.ScheduledTask;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
 import net.kyori.adventure.text.format.TextDecoration;
 import net.kyori.adventure.title.Title;
-import org.bukkit.Bukkit;
-import org.bukkit.ChatColor;
-import org.bukkit.Material;
-import org.bukkit.Sound;
+import org.bukkit.*;
 import org.bukkit.entity.Player;
 import org.bukkit.inventory.Inventory;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.ItemMeta;
-import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.scoreboard.*;
 
 
@@ -41,7 +37,6 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
-import java.util.function.Consumer;
 
 public class WaitingPhase implements GamePhase {
 
@@ -65,8 +60,7 @@ public class WaitingPhase implements GamePhase {
     //侧边栏计分板
     private Objective sidebarObjective;
 
-    private WaitingCountdown countdown;
-    private static final int COUNTDOWN_DURATION = 200;
+    private GameCountdown countdown;
 
     //玩家名队伍前缀
     private Team attackerTeam;
@@ -128,6 +122,7 @@ public class WaitingPhase implements GamePhase {
         }
         clearScoreboardTeam();
         cancelCountdown("等待阶段结束");
+        resetExperienceBar();
         //阶段切换清理：关闭所有打开的游戏 GUI
         ChestGui.closeAllGuis();
     }
@@ -164,9 +159,11 @@ public class WaitingPhase implements GamePhase {
     }
 
     private void startCountdown(){
-        countdown = new WaitingCountdown(GameContext.getInstance().getPlugin(), COUNTDOWN_DURATION);
+        int durationTicks = ConfigManager.getInstance().getCountdownTime();
+        countdown = new GameCountdown(GameContext.getInstance().getPlugin(), durationTicks);
         countdown.setOnTick(tick -> {
-            if(tick % 2 == 0){
+            //标题倒计时：仅在最后 10 秒（200 tick）内显示
+            if(tick <= 200 && tick % 2 == 0){
                 for(Player player : Bukkit.getOnlinePlayers()){
                     Title title = Title.title(
                             Component.text(">>> " + String.format("%.1f", tick / 20f) + " <<<", NamedTextColor.GREEN, TextDecoration.BOLD),
@@ -183,28 +180,70 @@ public class WaitingPhase implements GamePhase {
                     }
                 }
             }
-        });
-        countdown.setOnCancel(reason -> {
-            for(Player player : Bukkit.getOnlinePlayers()){
-                Title title = Title.title(
-                        Component.text("-", NamedTextColor.RED, TextDecoration.BOLD),
-                        Component.text("倒计时取消", NamedTextColor.RED, TextDecoration.BOLD),
-                        Title.Times.times(
-                                Duration.ZERO,
-                                Duration.ofMillis(3000),
-                                Duration.ZERO
-                        )
-                );
-                player.showTitle(title);
-                MessageUtil.sendMessageWithPostfix(player, Component.text("倒计时取消, 原因: " + reason, NamedTextColor.RED));
-                player.playSound(player.getLocation(), Sound.BLOCK_ANVIL_LAND, 1f, 1f);
+            //里程碑提醒：剩余 60秒 / 30秒 / 10秒 时发送消息
+            if(tick == 1200 || tick == 600 || tick == 400 || tick == 200){
+                int seconds = tick / 20;
+                for(Player player : Bukkit.getOnlinePlayers()){
+                    MessageUtil.sendMessageWithPrefix(player,
+                            Component.text("对局在 " + seconds + " 秒后开启", NamedTextColor.GOLD));
+                    player.playSound(player.getLocation(), Sound.UI_BUTTON_CLICK, 1f, 1f);
+                }
+            }
+            //经验条显示剩余秒数（每秒更新一次）
+            if(tick % 20 == 0){
+                updateExperienceBar(tick);
             }
         });
+        countdown.setOnCancel(reason -> {
+            //最后10秒（≤200 tick）内取消：照常 title 提示（含原音效）
+            if(countdown != null && countdown.getRemainingTicks() <= 200){
+                for(Player player : Bukkit.getOnlinePlayers()){
+                    Title title = Title.title(
+                            Component.text("-", NamedTextColor.RED, TextDecoration.BOLD),
+                            Component.text("倒计时取消", NamedTextColor.RED, TextDecoration.BOLD),
+                            Title.Times.times(
+                                    Duration.ZERO,
+                                    Duration.ofMillis(3000),
+                                    Duration.ZERO
+                            )
+                    );
+                    player.showTitle(title);
+                    MessageUtil.sendMessageWithPrefix(player, Component.text("倒计时取消, 原因: " + reason, NamedTextColor.RED));
+                    player.playSound(player.getLocation(), Sound.BLOCK_ANVIL_LAND, 1f, 1f);
+                }
+            }
+            //其他时候取消：仅聊天栏消息，不播放音效
+            else{
+                for(Player player : Bukkit.getOnlinePlayers()){
+                    MessageUtil.sendMessageWithPrefix(player, Component.text("倒计时取消, 原因: " + reason, NamedTextColor.RED));
+                }
+            }
+            resetExperienceBar();
+        });
         countdown.setOnFinish(() -> {
+            resetExperienceBar();
             GameStateMachine.getInstance().transitionTo(GameState.ROLE_SELECTING);
         });
 
         countdown.start();
+    }
+
+    /** 经验条数字显示剩余倒计时秒数，经验值比例显示当前秒内的进度 */
+    private void updateExperienceBar(int remainingTicks){
+        int seconds = (int) Math.ceil(remainingTicks / 20.0);
+        float progress = (remainingTicks % 20) / 20f;
+        for(Player player : Bukkit.getOnlinePlayers()){
+            player.setLevel(seconds);
+            player.setExp(progress);
+        }
+    }
+
+    /** 清除经验条倒计时显示 */
+    private void resetExperienceBar(){
+        for(Player player : Bukkit.getOnlinePlayers()){
+            player.setLevel(0);
+            player.setExp(0f);
+        }
     }
 
     private void cancelCountdown(String reason){
@@ -243,12 +282,12 @@ public class WaitingPhase implements GamePhase {
             sidebarObjective.getScore(ChatColor.GRAY + "- 阵营人数差不超过 " + config.getMaxSideDiff()).setScore(-5);
         }
 
-        if(config.isRequireReady()){
+        if(config.isRequireReadyMode()){
             if(isAllPlayersReady()){
-                sidebarObjective.getScore(ChatColor.GREEN + "- 除随机阵营外的参战人员准备").setScore(-6);
+                sidebarObjective.getScore(ChatColor.GREEN + "- 除观战者外的参战人员准备").setScore(-6);
             }
             else{
-                sidebarObjective.getScore(ChatColor.GRAY + "- 除随机阵营外的参战人员准备").setScore(-6);
+                sidebarObjective.getScore(ChatColor.GRAY + "- 除观战者外的参战人员准备").setScore(-6);
             }
         }
         sidebarObjective.getScore("   ").setScore(-7);
@@ -283,11 +322,23 @@ public class WaitingPhase implements GamePhase {
     }
 
     private void handlePlayerJoin(Player player){
+        //传送玩家到大厅位置
+        ConfigManager config = ConfigManager.getInstance();
+        World world = Bukkit.getWorld(config.getWaitingWorld());
+        if(world == null){
+            player.kick(Component.text("SHDF插件发生错误, 您已被踢出游戏!", NamedTextColor.RED, TextDecoration.BOLD));
+            return;
+        }
+        Location location = config.getLobbySpawnpoint().toLocation(world);
+        player.teleport(location);
+
         TeamManager.getInstance().removePlayer(player.getUniqueId());
         registerPlayer(player);
         player.setScoreboard(SHDFGamePlugin.getInstance().getTempScoreboard());
         updateSidebarObjective();
         checkStartConditions();
+
+
     }
 
     private void handlePlayerQuit(Player player){
@@ -356,9 +407,17 @@ public class WaitingPhase implements GamePhase {
     private boolean isConformMinPlayerPerSide(){
         ConfigManager config = ConfigManager.getInstance();
         TeamManager teamManager = TeamManager.getInstance();
-        if(teamManager.getPlayerPopulationOnTeam(ShdfTeam.ATTACKER) < config.getMinPopulationPerSide()) return false;
-        if(teamManager.getPlayerPopulationOnTeam(ShdfTeam.DEFENDER) < config.getMinPopulationPerSide()) return false;
-        return true;
+        int attackers = teamManager.getPlayerPopulationOnTeam(ShdfTeam.ATTACKER);
+        int defenders = teamManager.getPlayerPopulationOnTeam(ShdfTeam.DEFENDER);
+        int unknowns = teamManager.getPlayerPopulationOnTeam(ShdfTeam.UNKNOWN);
+        int min = config.getMinPopulationPerSide();
+
+        //双方各自还缺多少人，缺口只能由随机阵营（UNKNOWN）玩家补齐
+        int attackerShortage = Math.max(0, min - attackers);
+        int defenderShortage = Math.max(0, min - defenders);
+
+        //随机玩家总数必须能同时填满两个缺口（分配后双方都达到最低人数）
+        return unknowns >= attackerShortage + defenderShortage;
     }
 
     private boolean isConformMaxSideDiff(){
@@ -368,12 +427,16 @@ public class WaitingPhase implements GamePhase {
     private boolean isAllPlayersReady(){
         ConfigManager config = ConfigManager.getInstance();
         TeamManager teamManager = TeamManager.getInstance();
-        if(!config.isRequireReady()) return true;
+        if(!config.isRequireReadyMode()) return true;
         if(teamManager.getPlayerPopulation() == 0) return false;
+        //除观战者外的参战人员（进攻/防守/随机）都需准备
         for(UUID uuid : teamManager.getAllPlayersUuidsInTeam(ShdfTeam.ATTACKER)){
             if(!teamManager.isReady(uuid)) return false;
         }
         for(UUID uuid : teamManager.getAllPlayersUuidsInTeam(ShdfTeam.DEFENDER)){
+            if(!teamManager.isReady(uuid)) return false;
+        }
+        for(UUID uuid : teamManager.getAllPlayersUuidsInTeam(ShdfTeam.UNKNOWN)){
             if(!teamManager.isReady(uuid)) return false;
         }
         return true;
@@ -389,7 +452,7 @@ public class WaitingPhase implements GamePhase {
         inv.setItem(0, createTeamSelectorItem());
 
         //准备物品发给非观战者
-        if(shdfTeam.isCombatant() && ConfigManager.getInstance().isRequireReady()){
+        if(shdfTeam.isCombatant() && ConfigManager.getInstance().isRequireReadyMode()){
             inv.setItem(1, createReadyItem(teamManager.isReady(playerId)));
         }
         else{
@@ -424,7 +487,7 @@ public class WaitingPhase implements GamePhase {
         }
         ItemMeta meta = item.getItemMeta();
         meta.lore(List.of(
-                Component.text("只有所有除了随机和观战阵营的玩家准备后, 游戏才会开始", NamedTextColor.GRAY)
+                Component.text("除观战者外的所有参战人员准备后, 游戏才会开始", NamedTextColor.GRAY)
         ));
         meta = GameItem.applyIdOnItemMeta(readyToggleId, meta);
         item.setItemMeta(meta);
@@ -596,86 +659,5 @@ public class WaitingPhase implements GamePhase {
     private void useMapSelector(Player player){
     }
 
-
-    public static final class WaitingCountdown{
-
-        private final JavaPlugin plugin;
-        private final int totalTicks;
-        private int remainingTicks;
-        private ScheduledTask task;
-        private Runnable onFinish;
-        private Consumer<Integer> onTick;
-        private Consumer<String> onCancel;
-
-        public WaitingCountdown(JavaPlugin plugin, int totalTicks){
-            this.plugin = plugin;
-            this.totalTicks = totalTicks;
-            this.remainingTicks = totalTicks;
-        }
-
-        public void setOnFinish(Runnable onFinish){
-            this.onFinish = onFinish;
-        }
-
-        public void setOnTick(Consumer<Integer> onTick){
-            this.onTick = onTick;
-        }
-
-        public void setOnCancel(Consumer<String> onCancel){
-            this.onCancel = onCancel;
-        }
-
-        public void start(){
-            if(task != null) return;
-
-            task = plugin.getServer().getGlobalRegionScheduler().runAtFixedRate(
-                    plugin,
-                    new Consumer<ScheduledTask>() {
-                        @Override
-                        public void accept(ScheduledTask scheduledTask) {
-                            remainingTicks -= 1;
-                            if(remainingTicks <= 0){
-                                finish();
-                                return;
-                            }
-                            onTick.accept(remainingTicks);
-                        }
-                    },
-                    1L, 1L
-            );
-        }
-
-        public void cancel(String reason){
-            if(task == null) return;
-            task.cancel();
-            task = null;
-            if(onCancel != null){
-                onCancel.accept(reason);
-            }
-        }
-
-        public void finish(){
-            if(task != null){
-                task.cancel();
-                task = null;
-            }
-            if(onFinish != null){
-                onFinish.run();
-            }
-        }
-
-        public boolean isRunning(){
-            return task != null;
-        }
-
-        public int getRemainingTicks(){
-            return remainingTicks;
-        }
-
-        public double getRemainingSeconds(){
-            return remainingTicks / 20d;
-        }
-
-    }
 
 }

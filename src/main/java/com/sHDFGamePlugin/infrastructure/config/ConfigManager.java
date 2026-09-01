@@ -55,6 +55,9 @@ public class ConfigManager {
             selectedMapId = mapNames.getFirst();
         }
 
+        //必要字段校验：缺失则抛异常，插件启动失败
+        validateRequiredFields();
+
         plugin.getLogger().info("Configuration loaded!");
     }
 
@@ -80,7 +83,57 @@ public class ConfigManager {
             selectedMapId = mapNames.isEmpty() ? null : mapNames.getFirst();
         }
 
+        //必要字段校验：缺失则抛异常（由 /sg config reload 捕获并提示）
+        validateRequiredFields();
+
         plugin.getLogger().info("Configuration reloaded!");
+    }
+
+    /**
+     * 校验必要配置字段；缺失或未填写时抛出异常，使插件启动失败（fail-fast）。
+     * <p>
+     * 由 init() / reload() 调用。maps.yml 中单张地图的字段错误仍按"跳过该地图"处理。
+     */
+    private void validateRequiredFields(){
+        //waiting.mode
+        String mode = mainConfig.getString("waiting.mode", null);
+        if(mode == null || mode.isEmpty()){
+            throw new IllegalStateException("Missing required config: waiting.mode (值为 require_ready 或 auto)");
+        }
+        if(!mode.equalsIgnoreCase("require_ready") && !mode.equalsIgnoreCase("auto")){
+            throw new IllegalStateException("Invalid waiting.mode: '" + mode + "' (必须为 require_ready 或 auto)");
+        }
+
+        //waiting.countdown_time
+        if(!mainConfig.contains("waiting.countdown_time") || mainConfig.getInt("waiting.countdown_time", 0) <= 0){
+            throw new IllegalStateException("Missing or invalid required config: waiting.countdown_time (必须 > 0)");
+        }
+
+        //waiting.lobby_spawnpoint
+        if(parseVector(mainConfig.getConfigurationSection("waiting.lobby_spawnpoint")) == null){
+            throw new IllegalStateException("Missing required config: waiting.lobby_spawnpoint");
+        }
+
+        //role_selection.duration
+        if(!mainConfig.contains("role_selection.duration") || mainConfig.getInt("role_selection.duration", -1) < 0){
+            throw new IllegalStateException("Missing or invalid required config: role_selection.duration (必须 >= 0)");
+        }
+
+        //role_selection.attacker_spawnpoint / defender_spawnpoint
+        if(parseVector(mainConfig.getConfigurationSection("role_selection.attacker_spawnpoint")) == null){
+            throw new IllegalStateException("Missing required config: role_selection.attacker_spawnpoint");
+        }
+        if(parseVector(mainConfig.getConfigurationSection("role_selection.defender_spawnpoint")) == null){
+            throw new IllegalStateException("Missing required config: role_selection.defender_spawnpoint");
+        }
+
+        //地图列表与已加载地图
+        if(getMapNames().isEmpty()){
+            throw new IllegalStateException("No maps configured: config.yml 的 maps 列表为空");
+        }
+        if(mapConfigs.isEmpty()){
+            throw new IllegalStateException("No map loaded successfully: maps.yml 中没有任何地图加载成功");
+        }
     }
 
     public MapConfig getSelectedMapConfig(){
@@ -111,8 +164,34 @@ public class ConfigManager {
         return mainConfig.getBoolean("waiting.default_side_after_join_spectator_or_unknown", true);
     }
 
-    public boolean isRequireReady(){
-        return mainConfig.getBoolean("waiting.require_ready", true);
+    /** 开局模式："require_ready"(除观战者外全员准备) 或 "auto"(无需准备)；未知值按 require_ready 处理 */
+    public String getStartMode(){
+        return mainConfig.getString("waiting.mode", "require_ready");
+    }
+
+    /** 是否为"需全员准备"模式 */
+    public boolean isRequireReadyMode(){
+        return !"auto".equalsIgnoreCase(getStartMode());
+    }
+
+    /** 准备阶段倒计时时长（tick） */
+    public int getCountdownTime(){
+        return mainConfig.getInt("waiting.countdown_time", 200);
+    }
+
+    /** 等待阶段所在世界 */
+    public String getWaitingWorld(){
+        return mainConfig.getString("waiting.world", "world");
+    }
+
+    /** 角色选择倒计时时长（tick），0 = 必须全部手动选完 */
+    public int getRoleSelectionDuration(){
+        return mainConfig.getInt("role_selection.duration", 600);
+    }
+
+    /** 角色选择阶段所在世界 */
+    public String getRoleSelectionWorld(){
+        return mainConfig.getString("role_selection.world", "world");
     }
 
     public boolean isAllowDuplicateRoles(){

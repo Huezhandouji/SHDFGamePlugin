@@ -43,6 +43,24 @@ public class RoleBridge {
         this.allowDuplicateRoles = ConfigManager.getInstance().isAllowDuplicateRoles();
     }
 
+    /** 设置本局是否允许重复角色（选角阶段按人数动态调整） */
+    public void setAllowDuplicateRoles(boolean allow){
+        this.allowDuplicateRoles = allow;
+    }
+
+    public boolean isAllowDuplicateRoles(){
+        return allowDuplicateRoles;
+    }
+
+    /** 指定阵营当前已被占用的角色 id 集合 */
+    public Collection<String> getOccupiedRoles(ShdfTeam shdfTeam){
+        return switch (shdfTeam){
+            case ATTACKER -> attackerPlayerRoleMap.values();
+            case DEFENDER -> defenderPlayerRoleMap.values();
+            default -> List.of();
+        };
+    }
+
     public void setCurrentMapConfig(MapConfig mapConfig){
         this.currentMapConfig = mapConfig;
         clearAllOccupiedRoles();

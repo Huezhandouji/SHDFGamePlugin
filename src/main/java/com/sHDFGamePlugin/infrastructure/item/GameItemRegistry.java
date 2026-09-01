@@ -43,7 +43,6 @@ public final class GameItemRegistry {
     }
 
 
-
     public static final class ItemId{
         private ItemId(){}
         public static final String UTIL_CHEST_GUI_SLOT_HOLDER = "GameItem_util_ChestGuiSlotHolder";
