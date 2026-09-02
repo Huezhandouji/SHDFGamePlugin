@@ -14,7 +14,7 @@ import com.sHDFGamePlugin.infrastructure.RoleBridge;
 import com.sHDFGamePlugin.infrastructure.config.ConfigManager;
 import com.sHDFGamePlugin.infrastructure.event.ShdfPlayerJoinEvent;
 import com.sHDFGamePlugin.infrastructure.event.ShdfPlayerQuitEvent;
-import com.sHDFGamePlugin.infrastructure.regionExpression.CubeRegion;
+import com.sHDFGamePlugin.infrastructure.regionNotation.CubeRegion;
 import com.sHDFGamePlugin.util.MessageUtil;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
@@ -24,7 +24,6 @@ import org.bukkit.GameMode;
 import org.bukkit.Location;
 import org.bukkit.World;
 import org.bukkit.entity.Player;
-import org.bukkit.util.Vector;
 
 import java.util.UUID;
 
@@ -87,13 +86,18 @@ public class PlayingPhase implements GamePhase {
 
         ConfigManager config = ConfigManager.getInstance();
         Sector sector = SectorManager.getInstance().getCurrentSector();
-        World world = sector != null && config.getSelectedMapConfig() != null
-                ? Bukkit.getWorld(config.getSelectedMapConfig().getWorld())
-                : null;
+        World world = null;
+        if(sector != null && config.getSelectedMapConfig() != null){
+            world = Bukkit.getWorld(config.getSelectedMapConfig().getWorld());
+        }
         if(sector != null && world != null){
-            CubeRegion spawnRegion = status.getTeam() == ShdfTeam.ATTACKER
-                    ? sector.getAttackerSpawnRegion()
-                    : sector.getDefenderSpawnRegion();
+            CubeRegion spawnRegion;
+            if(status.getTeam() == ShdfTeam.ATTACKER){
+                spawnRegion = sector.getAttackerSpawnRegion();
+            }
+            else{
+                spawnRegion = sector.getDefenderSpawnRegion();
+            }
             player.teleport(spawnRegion.randomPoint().toLocation(world));
         }
 

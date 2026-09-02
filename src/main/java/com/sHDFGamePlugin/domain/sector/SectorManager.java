@@ -65,7 +65,10 @@ public class SectorManager {
     /** 当前据点的炸弹配置列表（用于 GUI 展示，保持配置顺序） */
     public List<BombConfig> getCurrentSectorBombs(){
         Sector current = getCurrentSector();
-        return current != null ? current.getBombs() : List.of();
+        if(current == null){
+            return List.of();
+        }
+        return current.getBombs();
     }
 
     /** 当前据点的全部运行时炸弹（不可变视图，保持配置顺序） */
@@ -81,13 +84,19 @@ public class SectorManager {
     /** 按 bombId 获取炸弹状态；未知 id 返回 null */
     public BombState getBombState(String bombId){
         ActiveBomb bomb = activeBombs.get(bombId);
-        return bomb != null ? bomb.getState() : null;
+        if(bomb == null){
+            return null;
+        }
+        return bomb.getState();
     }
 
     /** 按 bombId 获取引信剩余时间（tick）；未知 id 或未安放时为 0 */
     public int getBombFuseRemaining(String bombId){
         ActiveBomb bomb = activeBombs.get(bombId);
-        return bomb != null ? bomb.getFuseRemaining() : 0;
+        if(bomb == null){
+            return 0;
+        }
+        return bomb.getFuseRemaining();
     }
 
     /** 当前据点是否全部炸弹已爆炸（空列表视为 false） */
@@ -205,7 +214,10 @@ public class SectorManager {
     }
 
     public int getCurrentTimeLimitRemaining(){
-        return currentTimeLimit != null ? currentTimeLimit.getRemainingTicks() : 0;
+        if(currentTimeLimit == null){
+            return 0;
+        }
+        return currentTimeLimit.getRemainingTicks();
     }
 
     public void cleanup(){

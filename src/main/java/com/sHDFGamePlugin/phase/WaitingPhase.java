@@ -159,7 +159,8 @@ public class WaitingPhase implements GamePhase {
     }
 
     private void startCountdown(){
-        int durationTicks = ConfigManager.getInstance().getCountdownTime();
+        //自动 +1 补偿首 tick，配置里无需自行加 1
+        int durationTicks = ConfigManager.getInstance().getCountdownTime() + 1;
         countdown = new GameCountdown(GameContext.getInstance().getPlugin(), durationTicks);
         countdown.setOnTick(tick -> {
             //标题倒计时：仅在最后 10 秒（200 tick）内显示
@@ -619,9 +620,12 @@ public class WaitingPhase implements GamePhase {
         lore.add(Component.text("这个队伍有 " + TeamManager.getInstance().getPlayerPopulationOnTeam(team) + " 名玩家:", NamedTextColor.GRAY));
         for(UUID pid : TeamManager.getInstance().getAllPlayersUuidsInTeam(team)){
             Player p = Bukkit.getPlayer(pid);
-            lore.add(p != null
-                    ? Component.text(p.getName(), NamedTextColor.GRAY)
-                    : Component.text("#无法通过uuid获取玩家", NamedTextColor.RED));
+            if(p != null){
+                lore.add(Component.text(p.getName(), NamedTextColor.GRAY));
+            }
+            else{
+                lore.add(Component.text("#无法通过uuid获取玩家", NamedTextColor.RED));
+            }
         }
 
         meta.lore(lore);

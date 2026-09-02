@@ -11,8 +11,7 @@ waiting:
   #   auto: 无需准备，满足人数条件自动开始
   mode: "auto"
   # 准备阶段倒计时时长（tick），600 = 30 秒
-  # 请多设置1t，比如你要设置600，设成601
-  countdown_time: 601
+  countdown_time: 600
   # 玩家加入后是否默认为观战者
   # true: 加入后为观战者，需手动选队
   # false: 加入后为 UNKNOWN，等待分配
@@ -24,7 +23,7 @@ waiting:
 
 # ====== 角色选择阶段配置 ======
 role_selection:
-  # 选择倒计时（tick），0 = 必须全部手动选完
+  # 选择倒计时（tick），600 = 30 秒；0 或未配置则使用默认 600
   duration: 600
   # 角色选择阶段所在世界
   world: "world"

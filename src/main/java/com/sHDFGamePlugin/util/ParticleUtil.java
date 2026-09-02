@@ -1,6 +1,6 @@
 package com.sHDFGamePlugin.util;
 
-import com.sHDFGamePlugin.infrastructure.regionExpression.CubeRegion;
+import com.sHDFGamePlugin.infrastructure.regionNotation.CubeRegion;
 import org.bukkit.Particle;
 import org.bukkit.World;
 import org.bukkit.util.Vector;

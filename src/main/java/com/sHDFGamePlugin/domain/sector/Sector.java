@@ -1,7 +1,7 @@
 package com.sHDFGamePlugin.domain.sector;
 
 import com.sHDFGamePlugin.infrastructure.config.BombConfig;
-import com.sHDFGamePlugin.infrastructure.regionExpression.CubeRegion;
+import com.sHDFGamePlugin.infrastructure.regionNotation.CubeRegion;
 import net.kyori.adventure.text.Component;
 
 import java.util.List;

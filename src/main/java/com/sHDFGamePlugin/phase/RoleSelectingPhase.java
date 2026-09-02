@@ -8,6 +8,7 @@ import com.sHDFGamePlugin.domain.team.PlayerStatus;
 import com.sHDFGamePlugin.domain.team.ShdfTeam;
 import com.sHDFGamePlugin.domain.team.TeamManager;
 import com.sHDFGamePlugin.infrastructure.GameEventBus;
+import com.sHDFGamePlugin.infrastructure.HashBiMap;
 import com.sHDFGamePlugin.infrastructure.RoleBridge;
 import com.sHDFGamePlugin.infrastructure.config.ConfigManager;
 import com.sHDFGamePlugin.infrastructure.event.InventoryClickGameItemEvent;
@@ -34,10 +35,8 @@ import org.bukkit.inventory.meta.ItemMeta;
 import org.bukkit.util.Vector;
 
 import java.util.ArrayList;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Random;
-import java.util.Set;
 import java.util.UUID;
 
 /**
@@ -64,13 +63,16 @@ public class RoleSelectingPhase implements GamePhase {
 
     //断线保护时长（tick）：退出后保留 PlayerStatus，超时仍未重连才移除
     private static final long DISCONNECT_PROTECTION_TICKS = 1200;
+    //角色选择倒计时默认时长（tick）：duration 未配置或为 0 时使用
+    private static final int DEFAULT_ROLE_SELECTION_DURATION = 600;
 
     //双方可用角色池
     private List<String> availableAttackerRoleIds = new ArrayList<>();
     private List<String> availableDefenderRoleIds = new ArrayList<>();
 
-    //已注册的角色按钮 GameItem id（额外保存一份，点击校验以此为准）
-    private final Set<String> registeredRoleButtonIds = new HashSet<>();
+    //已注册的角色按钮（双向表：角色名 <-> 按钮 GameItem id，按阵营分表，点击校验以此为准）
+    private final HashBiMap<String, String> registeredAttackerRoleButtonIds = new HashBiMap<>();
+    private final HashBiMap<String, String> registeredDefenderRoleButtonIds = new HashBiMap<>();
 
     //倒计时
     private GameCountdown countdown;
@@ -123,6 +125,8 @@ public class RoleSelectingPhase implements GamePhase {
 
         //9. 订阅事件
         subscribeEvents();
+
+        teleportAllPlayersToSpawnpoint();
     }
 
     @Override
@@ -135,7 +139,7 @@ public class RoleSelectingPhase implements GamePhase {
             player.getInventory().setItem(0, null);
         }
 
-        teleportAllPlayersToSpawnpoint();
+
     }
 
     // ==================== 进入阶段 ====================
@@ -181,11 +185,18 @@ public class RoleSelectingPhase implements GamePhase {
             GameContext.getInstance().getPlugin().getLogger().warning(
                     "[RoleSelectingPhase] 任一队伍人数超过角色数量 (进攻 " + attackers + "/" + availableAttackerRoleIds.size()
                             + ", 防守 " + defenders + "/" + availableDefenderRoleIds.size() + "), 本局已启用允许重复角色!");
+            MessageUtil.sendPrefixedMessageToAllPlayers(Component.text("由于有队伍人数超过已配置的角色数量, 本场对局将允许重复角色!", NamedTextColor.YELLOW, TextDecoration.BOLD));
         }
     }
 
     private void giveRoleSelectorItem(Player player, ShdfTeam team){
-        String itemId = team == ShdfTeam.ATTACKER ? attackerRoleSelectorId : defenderRoleSelectorId;
+        String itemId;
+        if(team == ShdfTeam.ATTACKER){
+            itemId = attackerRoleSelectorId;
+        }
+        else{
+            itemId = defenderRoleSelectorId;
+        }
         ItemStack item = new ItemStack(Material.NETHER_STAR);
         ItemMeta meta = item.getItemMeta();
         meta.displayName(Component.text("选择角色", NamedTextColor.GOLD, TextDecoration.BOLD));
@@ -211,20 +222,39 @@ public class RoleSelectingPhase implements GamePhase {
     }
 
     private void registerRoleButtons(){
-        //每次进入阶段重新注册，id 列表以本次为准
-        registeredRoleButtonIds.clear();
+        //每次进入阶段重新注册，两张表以本次为准
+        registeredAttackerRoleButtonIds.clear();
+        registeredDefenderRoleButtonIds.clear();
         registerRoleButtonsForTeam(availableAttackerRoleIds, ShdfTeam.ATTACKER);
         registerRoleButtonsForTeam(availableDefenderRoleIds, ShdfTeam.DEFENDER);
     }
 
     private void registerRoleButtonsForTeam(List<String> roleIds, ShdfTeam team){
         RoleBridge roleBridge = RoleBridge.getInstance();
-        String side = team == ShdfTeam.ATTACKER ? "attacker" : "defender";
+        String side;
+        if(team == ShdfTeam.ATTACKER){
+            side = "attacker";
+        }
+        else{
+            side = "defender";
+        }
+        //按阵营选择对应的注册表
+        HashBiMap<String, String> registeredMap;
+        if(team == ShdfTeam.ATTACKER){
+            registeredMap = registeredAttackerRoleButtonIds;
+        }
+        else{
+            registeredMap = registeredDefenderRoleButtonIds;
+        }
         for(String roleId : roleIds){
             //只注册已实现（有效）的角色
             if(!roleBridge.isValidRoleId(roleId)) continue;
             String gameItemId = PREFIX + "role_" + side + "_" + roleId;
-            registeredRoleButtonIds.add(gameItemId);
+            //记录: 角色名 -> 按钮 id；put 失败说明键/值冲突，跳过本次注册
+            if(!registeredMap.put(roleId, gameItemId)){
+                GameContext.getInstance().getPlugin().getLogger().warning("[RoleSelectingPhase] 注册角色按钮冲突, 跳过: " + roleId + " -> " + gameItemId);
+                continue;
+            }
             GameItemRegistry.createAndRegister(gameItemId, builder ->
                     builder.canDrop(false).canMove(false)
                             .inventoryClickHandler(event ->
@@ -235,10 +265,20 @@ public class RoleSelectingPhase implements GamePhase {
     // ==================== 倒计时 ====================
 
     private void startCountdown(){
+        //duration <= 0（未配置/写 0）时回退默认 600 tick；只跑倒计时，不做"手动选完"判定
         int duration = ConfigManager.getInstance().getRoleSelectionDuration();
-        if(duration <= 0) return; //0 = 无倒计时，等全员手动选完
-
-        countdown = new GameCountdown(GameContext.getInstance().getPlugin(), duration);
+        if(duration <= 0){
+            duration = DEFAULT_ROLE_SELECTION_DURATION;
+        }
+        //自动 +1 补偿首 tick，配置里无需自行加 1
+        countdown = new GameCountdown(GameContext.getInstance().getPlugin(), duration + 1);
+        countdown.setOnTick(tick -> {
+            //里程碑播报：剩余 30秒 / 20秒 / 10秒 时向全员广播（与准备阶段一致）
+            if(tick == 600 || tick == 400 || tick == 200){
+                MessageUtil.sendPrefixedMessageToAllPlayers(
+                        Component.text("对局在 " + (tick / 20) + " 秒后开启", NamedTextColor.GOLD));
+            }
+        });
         countdown.setOnFinish(() -> finishRoleSelection());
         countdown.start();
     }
@@ -250,23 +290,7 @@ public class RoleSelectingPhase implements GamePhase {
         countdown = null;
     }
 
-    // ==================== 结束阶段（倒计时结束/全员选完） ====================
-
-    /** 无倒计时模式下：全部在线的参战玩家选完即收尾（离线玩家不阻止） */
-    private void checkAllPlayersSelected(){
-        if(!allOnlineCombatantsSelected(ShdfTeam.ATTACKER)) return;
-        if(!allOnlineCombatantsSelected(ShdfTeam.DEFENDER)) return;
-        finishRoleSelection();
-    }
-
-    private boolean allOnlineCombatantsSelected(ShdfTeam team){
-        for(UUID uuid : TeamManager.getInstance().getAllPlayersUuidsInTeam(team)){
-            if(Bukkit.getPlayer(uuid) == null) continue; //离线玩家不阻止收尾
-            PlayerStatus status = TeamManager.getInstance().getPlayerStatus(uuid);
-            if(status == null || status.getSelectedRoleId() == null) return false;
-        }
-        return true;
-    }
+    // ==================== 结束阶段（倒计时结束） ====================
 
     private void finishRoleSelection(){
         //为未选角色的参战玩家自动分配
@@ -352,15 +376,13 @@ public class RoleSelectingPhase implements GamePhase {
 
     private void handleInventoryClick(InventoryClickGameItemEvent event){
         String itemId = event.getGameItemId();
-        //以已注册按钮 id 列表为准，未注册的一律忽略
-        if(!registeredRoleButtonIds.contains(itemId)) return;
-
-        String rolePrefix = PREFIX + "role_";
-        //格式: role_<attacker|defender>_<roleId>
-        String rest = itemId.substring(rolePrefix.length());
-        int firstUnderscore = rest.indexOf('_');
-        if(firstUnderscore <= 0) return;
-        selectRole(event.getPlayer(), rest.substring(firstUnderscore + 1));
+        //通过双向表反查按钮 id 对应的角色名；两张表都查不到说明不是本阶段按钮
+        String roleId = registeredAttackerRoleButtonIds.getByValue(itemId);
+        if(roleId == null){
+            roleId = registeredDefenderRoleButtonIds.getByValue(itemId);
+        }
+        if(roleId == null) return;
+        selectRole(event.getPlayer(), roleId);
     }
 
     private void openRoleSelectionGui(Player player){
@@ -368,14 +390,27 @@ public class RoleSelectingPhase implements GamePhase {
         ShdfTeam team = teamManager.getTeam(player.getUniqueId());
         if(team == null || !team.isCombatant()) return;
 
-        List<String> roleIds = team == ShdfTeam.ATTACKER ? availableAttackerRoleIds : availableDefenderRoleIds;
+        List<String> roleIds;
+        if(team == ShdfTeam.ATTACKER){
+            roleIds = availableAttackerRoleIds;
+        }
+        else{
+            roleIds = availableDefenderRoleIds;
+        }
         //只展示有效（已实现）角色，与注册逻辑一致
         RoleBridge roleBridge = RoleBridge.getInstance();
         List<String> validRoleIds = roleIds.stream().filter(roleBridge::isValidRoleId).toList();
         int rows = Math.max(1, (validRoleIds.size() + 8) / 9);
 
+        String sideName;
+        if(team == ShdfTeam.ATTACKER){
+            sideName = "进攻方";
+        }
+        else{
+            sideName = "防守方";
+        }
         ChestGui.Builder builder = ChestGui.Builder.create()
-                .title(Component.text("选择角色 - " + (team == ShdfTeam.ATTACKER ? "进攻方" : "防守方"),
+                .title(Component.text("选择角色 - " + sideName,
                         NamedTextColor.YELLOW).decorate(TextDecoration.BOLD))
                 .rows(rows);
 
@@ -420,7 +455,13 @@ public class RoleSelectingPhase implements GamePhase {
         }
         meta.lore(lore);
 
-        String side = team == ShdfTeam.ATTACKER ? "attacker" : "defender";
+        String side;
+        if(team == ShdfTeam.ATTACKER){
+            side = "attacker";
+        }
+        else{
+            side = "defender";
+        }
         meta = GameItem.applyIdOnItemMeta(PREFIX + "role_" + side + "_" + roleId, meta);
         button.setItemMeta(meta);
         return button;
@@ -450,11 +491,6 @@ public class RoleSelectingPhase implements GamePhase {
 
         //刷新其他玩家已打开的角色菜单（占用标记更新）
         refreshOpenRoleGuis();
-
-        //无倒计时模式下：全员选完即收尾
-        if(countdown == null){
-            checkAllPlayersSelected();
-        }
     }
 
     private void refreshOpenRoleGuis(){
@@ -464,7 +500,13 @@ public class RoleSelectingPhase implements GamePhase {
             ShdfTeam team = TeamManager.getInstance().getTeam(player.getUniqueId());
             if(team == null || !team.isCombatant()) continue;
 
-            List<String> roleIds = team == ShdfTeam.ATTACKER ? availableAttackerRoleIds : availableDefenderRoleIds;
+            List<String> roleIds;
+            if(team == ShdfTeam.ATTACKER){
+                roleIds = availableAttackerRoleIds;
+            }
+            else{
+                roleIds = availableDefenderRoleIds;
+            }
             int slot = 0;
             for(String roleId : roleIds){
                 gui.setSlot(slot++, buildRoleButton(player, roleId, team));
@@ -500,9 +542,13 @@ public class RoleSelectingPhase implements GamePhase {
         ConfigManager config = ConfigManager.getInstance();
         World world = Bukkit.getWorld(config.getRoleSelectionWorld());
         if(world != null){
-            Vector spawn = status.getTeam() == ShdfTeam.ATTACKER
-                    ? config.getRoleSelectionAttackerSpawnpoint()
-                    : config.getRoleSelectionDefenderSpawnpoint();
+            Vector spawn;
+            if(status.getTeam() == ShdfTeam.ATTACKER){
+                spawn = config.getRoleSelectionAttackerSpawnpoint();
+            }
+            else{
+                spawn = config.getRoleSelectionDefenderSpawnpoint();
+            }
             if(spawn != null){
                 player.teleport(spawn.toLocation(world));
             }
@@ -548,11 +594,6 @@ public class RoleSelectingPhase implements GamePhase {
 
         //断线保护：保留 PlayerStatus 与角色占用，超时仍未重连才移除
         scheduleDisconnectRemoval(uuid);
-
-        //无倒计时模式下重查全员选择状态（离线玩家不阻止收尾）
-        if(countdown == null){
-            checkAllPlayersSelected();
-        }
     }
 
     /** 断线保护：一段时间后玩家仍未上线，则移除记录并释放角色 */

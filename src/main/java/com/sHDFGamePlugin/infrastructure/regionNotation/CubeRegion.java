@@ -1,4 +1,4 @@
-package com.sHDFGamePlugin.infrastructure.regionExpression;
+package com.sHDFGamePlugin.infrastructure.regionNotation;
 
 import org.bukkit.util.Vector;
 

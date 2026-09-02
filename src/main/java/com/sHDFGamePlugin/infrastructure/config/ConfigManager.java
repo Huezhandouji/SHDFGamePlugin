@@ -1,7 +1,7 @@
 package com.sHDFGamePlugin.infrastructure.config;
 
 import com.sHDFGamePlugin.domain.sector.Sector;
-import com.sHDFGamePlugin.infrastructure.regionExpression.CubeRegion;
+import com.sHDFGamePlugin.infrastructure.regionNotation.CubeRegion;
 import net.kyori.adventure.text.Component;
 import org.bukkit.configuration.ConfigurationSection;
 import org.bukkit.configuration.MemoryConfiguration;
@@ -80,7 +80,12 @@ public class ConfigManager {
         //保持当前选中的地图；若已被删除则回退到第一张可用地图
         if(selectedMapId == null || !mapConfigs.containsKey(selectedMapId)){
             List<String> mapNames = getMapNames();
-            selectedMapId = mapNames.isEmpty() ? null : mapNames.getFirst();
+            if(mapNames.isEmpty()){
+                selectedMapId = null;
+            }
+            else{
+                selectedMapId = mapNames.getFirst();
+            }
         }
 
         //必要字段校验：缺失则抛异常（由 /sg config reload 捕获并提示）
@@ -214,13 +219,19 @@ public class ConfigManager {
     //当前选中地图的观战者出生点
     public Vector getSpectatorSpawnpoint(){
         MapConfig selected = getSelectedMapConfig();
-        return selected != null ? selected.getSpectatorSpawnpoint() : null;
+        if(selected == null){
+            return null;
+        }
+        return selected.getSpectatorSpawnpoint();
     }
 
     //指定地图的观战者出生点
     public Vector getSpectatorSpawnpoint(String mapId){
         MapConfig config = mapConfigs.get(mapId);
-        return config != null ? config.getSpectatorSpawnpoint() : null;
+        if(config == null){
+            return null;
+        }
+        return config.getSpectatorSpawnpoint();
     }
 
     //大厅出生点（等待阶段）

@@ -1,6 +1,6 @@
 package com.sHDFGamePlugin.infrastructure.config;
 
-import com.sHDFGamePlugin.infrastructure.regionExpression.CubeRegion;
+import com.sHDFGamePlugin.infrastructure.regionNotation.CubeRegion;
 import net.kyori.adventure.text.Component;
 
 /**

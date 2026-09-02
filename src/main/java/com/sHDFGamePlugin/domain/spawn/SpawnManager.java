@@ -1,7 +1,7 @@
 package com.sHDFGamePlugin.domain.spawn;
 
 import com.sHDFGamePlugin.core.GameContext;
-import com.sHDFGamePlugin.infrastructure.regionExpression.CubeRegion;
+import com.sHDFGamePlugin.infrastructure.regionNotation.CubeRegion;
 import com.sHDFGamePlugin.domain.sector.Sector;
 import com.sHDFGamePlugin.domain.sector.SectorManager;
 import com.sHDFGamePlugin.domain.team.PlayerState;
