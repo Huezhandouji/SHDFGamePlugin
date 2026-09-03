@@ -194,6 +194,24 @@ public class ConfigManager {
         return mainConfig.getInt("role_selection.duration", 600);
     }
 
+    /** 角色选择阶段断线重连保护时长（tick）：不得超过本阶段倒计时 duration，超过则按 duration 处理 */
+    public int getRoleSelectionReconnectTimeLimit(){
+        int reconnect = mainConfig.getInt("role_selection.reconnect_time_limit", 1200);
+        int duration = getRoleSelectionDuration();
+        if(duration <= 0){
+            duration = 600; //与阶段内"duration<=0 回退默认 600"保持一致
+        }
+        if(reconnect > duration){
+            return duration;
+        }
+        return reconnect;
+    }
+
+    /** 战斗阶段断线重连保护时长（tick） */
+    public int getPlayingReconnectTimeLimit(){
+        return mainConfig.getInt("playing.reconnect_time_limit", 1200);
+    }
+
     /** 角色选择阶段所在世界 */
     public String getRoleSelectionWorld(){
         return mainConfig.getString("role_selection.world", "world");

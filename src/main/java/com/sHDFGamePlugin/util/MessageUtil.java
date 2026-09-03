@@ -1,5 +1,6 @@
 package com.sHDFGamePlugin.util;
 
+import com.sHDFGamePlugin.SHDFGamePlugin;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
 import net.kyori.adventure.text.format.TextDecoration;
@@ -18,5 +19,10 @@ public class MessageUtil {
         for (Player player : Bukkit.getOnlinePlayers()) {
             sendMessageWithPrefix(player, message);
         }
+    }
+
+    public static void broadcastPrefixedMessage(Component message) {
+        SHDFGamePlugin.getInstance().getServer().broadcast(Component.text("SHDF>>", NamedTextColor.GRAY, TextDecoration.BOLD).append(Component.empty().decoration(TextDecoration.BOLD, false)
+                .color(NamedTextColor.WHITE).append(message)));
     }
 }

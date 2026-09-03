@@ -9,6 +9,7 @@ import com.sHDFGamePlugin.domain.team.PlayerState;
 import com.sHDFGamePlugin.domain.team.PlayerStatus;
 import com.sHDFGamePlugin.domain.team.ShdfTeam;
 import com.sHDFGamePlugin.domain.team.TeamManager;
+import com.sHDFGamePlugin.infrastructure.DisconnectProtection;
 import com.sHDFGamePlugin.infrastructure.GameEventBus;
 import com.sHDFGamePlugin.infrastructure.RoleBridge;
 import com.sHDFGamePlugin.infrastructure.config.ConfigManager;
@@ -38,9 +39,6 @@ public class PlayingPhase implements GamePhase {
 
     private static final PlayingPhase INSTANCE = new PlayingPhase();
 
-    //断线保护时长（tick）：退出后保留 PlayerStatus，超时仍未重连才移除
-    private static final long DISCONNECT_PROTECTION_TICKS = 1200;
-
     private PlayingPhase() {}
 
     public static PlayingPhase getInstance() {
@@ -64,10 +62,14 @@ public class PlayingPhase implements GamePhase {
 
     // ==================== 玩家加入/退出 ====================
 
+    /** 加入事件入口：先取消挂起的断线保护；保留的 IN_BATTLE 战斗身份恢复，否则转为观战者并传送观战出生点 */
     private void handlePlayerJoin(ShdfPlayerJoinEvent event){
         Player player = event.getPlayer();
         UUID uuid = player.getUniqueId();
         TeamManager teamManager = TeamManager.getInstance();
+
+        //玩家已上线，取消其挂起的断线保护任务
+        DisconnectProtection.getInstance().cancel(uuid);
 
         PlayerStatus status = teamManager.getPlayerStatus(uuid);
         //断线重连：保留的 PlayerStatus 且处于战斗状态 → 恢复战斗身份
@@ -132,6 +134,7 @@ public class PlayingPhase implements GamePhase {
         player.setGameMode(GameMode.SPECTATOR);
     }
 
+    /** 退出事件入口：空服则回 IDLE；否则保留 PlayerStatus（断线保护），超过重连时限仍未上线才移除 */
     private void handlePlayerQuit(ShdfPlayerQuitEvent event){
         UUID uuid = event.getPlayer().getUniqueId();
 
@@ -140,21 +143,15 @@ public class PlayingPhase implements GamePhase {
             return;
         }
 
-        //断线保护：保留 PlayerStatus 与角色占用，超时仍未重连才移除
-        scheduleDisconnectRemoval(uuid);
-    }
-
-    /** 断线保护：一段时间后玩家仍未上线，则移除记录并释放角色 */
-    private void scheduleDisconnectRemoval(UUID uuid){
-        GameContext.getInstance().getPlugin().getServer().getGlobalRegionScheduler().runDelayed(
+        //断线保护：保留 PlayerStatus 与角色占用，超过重连时限仍未上线才移除
+        DisconnectProtection.getInstance().start(
                 GameContext.getInstance().getPlugin(),
-                task -> {
-                    if(Bukkit.getPlayer(uuid) == null){
-                        TeamManager.getInstance().removePlayer(uuid);
-                        RoleBridge.getInstance().clearPlayerRole(uuid);
-                    }
-                },
-                DISCONNECT_PROTECTION_TICKS
+                uuid,
+                ConfigManager.getInstance().getPlayingReconnectTimeLimit(),
+                expiredUuid -> {
+                    TeamManager.getInstance().removePlayer(expiredUuid);
+                    RoleBridge.getInstance().clearPlayerRole(expiredUuid);
+                }
         );
     }
 

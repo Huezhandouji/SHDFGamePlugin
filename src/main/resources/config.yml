@@ -25,6 +25,8 @@ waiting:
 role_selection:
   # 选择倒计时（tick），600 = 30 秒；0 或未配置则使用默认 600
   duration: 600
+  # 断线重连保护时长（tick）：不得大于本阶段倒计时 duration，超过时按 duration 处理
+  reconnect_time_limit: 400
   # 角色选择阶段所在世界
   world: "world"
   # 角色选择结束后，双方进入对局的初始出生点
@@ -35,6 +37,8 @@ role_selection:
 playing:
   # 是否允许同阵营选择重复角色
   allow_duplicate_roles: false
+  # 断线重连保护时长（tick）：玩家退出后保留状态，超时仍未重连才清除
+  reconnect_time_limit: 1200
 
 # ====== 可用地图列表 ======
 maps:
