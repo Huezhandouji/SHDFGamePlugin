@@ -87,6 +87,8 @@ public class FinishedPhase implements GamePhase {
             player.setFallDistance(0);
             player.getActivePotionEffects().forEach(effect -> player.removePotionEffect(effect.getType()));
             player.setGameMode(GameMode.ADVENTURE);
+            //复位等待重生/死亡可能遗留的碰撞状态（隐身效果随上方"清除全部药水效果"一并移除）
+            player.setCollidable(true);
             player.closeInventory();
         }
     }

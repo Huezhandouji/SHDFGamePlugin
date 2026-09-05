@@ -1,5 +1,6 @@
 package com.sHDFGamePlugin.phase;
 
+import com.sHDFGamePlugin.SHDFGamePlugin;
 import com.sHDFGamePlugin.core.GameContext;
 import com.sHDFGamePlugin.core.GameState;
 import com.sHDFGamePlugin.core.GameStateMachine;
@@ -29,19 +30,19 @@ import com.shadowHunterRolesPlugin.registry.RoleRegistry;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
 import net.kyori.adventure.text.format.TextDecoration;
-import org.bukkit.Bukkit;
-import org.bukkit.GameMode;
-import org.bukkit.Location;
-import org.bukkit.Material;
-import org.bukkit.Sound;
-import org.bukkit.World;
+import net.kyori.adventure.title.Title;
+import org.bukkit.*;
 import org.bukkit.enchantments.Enchantment;
 import org.bukkit.entity.Player;
 import org.bukkit.inventory.ItemFlag;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.ItemMeta;
+import org.bukkit.scoreboard.Criteria;
+import org.bukkit.scoreboard.DisplaySlot;
+import org.bukkit.scoreboard.Objective;
 import org.bukkit.util.Vector;
 
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
@@ -54,8 +55,8 @@ import java.util.UUID;
  * <p>
  * 职责：
  * - 进入时自动分配 UNKNOWN 玩家、按人数判定是否启用重复角色、发放选择物品；
- * - 右键物品打开角色选择 GUI，选择后记录 selectedRoleId 并应用角色；
- * - 倒计时结束（或无倒计时时全员选完）为未选玩家自动分配随机角色，部署进入 PLAYING。
+ * - 右键物品打开角色选择 GUI，选择后仅记录 selectedRoleId（角色在战斗阶段统一应用）；
+ * - 倒计时结束（或无倒计时时全员选完）为未选玩家自动分配随机角色，入场部署移交 PlayingPhase。
  */
 public class RoleSelectingPhase implements GamePhase {
 
@@ -83,6 +84,9 @@ public class RoleSelectingPhase implements GamePhase {
     //已注册的角色按钮（双向表：角色名 <-> 按钮 GameItem id，按阵营分表，点击校验以此为准）
     private final HashBiMap<String, String> registeredAttackerRoleButtonIds = new HashBiMap<>();
     private final HashBiMap<String, String> registeredDefenderRoleButtonIds = new HashBiMap<>();
+
+    //侧边栏计分板
+    private Objective sidebarObjective;
 
     //倒计时
     private GameCountdown countdown;
@@ -141,7 +145,11 @@ public class RoleSelectingPhase implements GamePhase {
         //9. 订阅事件
         subscribeEvents();
 
+        //10.传送玩家至相应大厅
         teleportAllPlayersToSpawnpoint();
+
+        //11.更新侧边栏
+        updateSidebarObjective();
     }
 
     /** 阶段退出：注销订阅、取消倒计时、关闭所有打开的 GUI 并清理快捷栏选择物品 */
@@ -158,7 +166,46 @@ public class RoleSelectingPhase implements GamePhase {
 
     }
 
+    /** 创建一个新的侧边栏计分板 */
+    private void createSidebarObjective(){
+        sidebarObjective = SHDFGamePlugin.getInstance().getTempScoreboard().registerNewObjective("role_selecting_phase_sidebar", Criteria.DUMMY,
+                Component.text("DECAYING FRONTLINE", NamedTextColor.GOLD, TextDecoration.BOLD));
+        sidebarObjective.setDisplaySlot(DisplaySlot.SIDEBAR);
+    }
+
+    /** 更新计分板 */
+    @SuppressWarnings("deprecated")
+    private void updateSidebarObjective(){
+        ConfigManager config = ConfigManager.getInstance();
+        //重建侧边栏：先注销旧的（兼容跨阶段残留），再新建
+        if(sidebarObjective != null){
+            sidebarObjective.unregister();
+        }
+        createSidebarObjective();
+
+        sidebarObjective.getScore(ChatColor.BOLD + "角色选择阶段").setScore(-1);
+        sidebarObjective.getScore(" ").setScore(-2);
+
+        if(RoleBridge.getInstance().isAllowDuplicateRoles()){
+            sidebarObjective.getScore("本场对局允许使用重复角色").setScore(-3);
+        }
+        else{
+            sidebarObjective.getScore("本场对局不允许使用重复角色").setScore(-3);
+        }
+
+        sidebarObjective.getScore("  ").setScore(-4);
+
+        //倒计时行：倒计时运行时在 -8 显示"游戏将在 mm:ss 后开始"
+        if(countdown != null && countdown.isRunning()){
+            int seconds = (int) Math.ceil(countdown.getRemainingTicks() / 20.0);
+            String mmss = String.format("%02d:%02d", seconds / 60, seconds % 60);
+            sidebarObjective.getScore(ChatColor.GOLD + "对局阶段 " + mmss + " 后开始").setScore(-5);
+        }
+    }
+
     // ==================== 进入阶段 ====================
+
+
 
     /** 从当前选中地图载入双方可用角色池；地图缺失时告警并保持空池 */
     private void loadAvailableRoleIds(){
@@ -305,11 +352,30 @@ public class RoleSelectingPhase implements GamePhase {
         //自动 +1 补偿首 tick，配置里无需自行加 1
         countdown = new GameCountdown(GameContext.getInstance().getPlugin(), duration + 1);
         countdown.setOnTick(tick -> {
+            //标题倒计时特效：仅在最后 10 秒（200 tick）内显示（与准备阶段一致）
+            if(tick <= 200 && tick % 2 == 0){
+                for(Player player : Bukkit.getOnlinePlayers()){
+                    Title title = Title.title(
+                            Component.text(">>> " + String.format("%.1f", tick / 20f) + " <<<", NamedTextColor.GREEN, TextDecoration.BOLD),
+                            Component.text("对局即将开启", NamedTextColor.GREEN, TextDecoration.BOLD),
+                            Title.Times.times(
+                                    Duration.ZERO,
+                                    Duration.ofMillis(1000),
+                                    Duration.ZERO
+                            )
+                    );
+                    player.showTitle(title);
+                    if(tick % 20 == 0){
+                        player.playSound(player.getLocation(), Sound.UI_BUTTON_CLICK, 1f, 1f);
+                    }
+                }
+            }
             //里程碑播报：剩余 30秒 / 20秒 / 10秒 时向全员广播（与准备阶段一致）
             if(tick == 600 || tick == 400 || tick == 200){
                 MessageUtil.sendPrefixedMessageToAllPlayers(
                         Component.text("对局在 " + (tick / 20) + " 秒后开启", NamedTextColor.GOLD));
             }
+            updateSidebarObjective();
         });
         countdown.setOnFinish(() -> finishRoleSelection());
         countdown.start();
@@ -325,7 +391,7 @@ public class RoleSelectingPhase implements GamePhase {
 
     // ==================== 结束阶段（倒计时结束） ====================
 
-    /** 阶段收尾：若已无在线玩家则重置游戏状态并回 IDLE；否则为未选玩家自动分配角色 → 部署参战玩家 → 切换至 PLAYING */
+    /** 阶段收尾：若已无在线玩家则重置游戏状态并回 IDLE；否则为未选玩家自动分配角色 → 切换至 PLAYING（入场部署由 PlayingPhase.onEnter 统一负责） */
     private void finishRoleSelection(){
         //兜底：阶段结束时服务器已无玩家 → 重置游戏状态并回到 IDLE
         if(Bukkit.getOnlinePlayers().isEmpty()){
@@ -337,9 +403,7 @@ public class RoleSelectingPhase implements GamePhase {
 
         //为未选角色的参战玩家自动分配
         autoAssignRoles();
-        //部署：传送出生点 + 进入战斗状态
-        deployCombatants();
-        //进入对局
+        //进入对局（入场部署：传送当前据点出生区 + 应用角色，由 PlayingPhase.onEnter 统一负责）
         GameStateMachine.getInstance().transitionTo(GameState.PLAYING);
     }
 
@@ -399,37 +463,6 @@ public class RoleSelectingPhase implements GamePhase {
             }
         }
         return roleIds;
-    }
-
-    /** 部署参战玩家：传送至阵营出生点并进入战斗状态 */
-    private void deployCombatants(){
-        ConfigManager config = ConfigManager.getInstance();
-        if(config.getSelectedMapConfig() == null) return;
-        World world = Bukkit.getWorld(config.getSelectedMapConfig().getWorld());
-        if(world == null){
-            GameContext.getInstance().getPlugin().getLogger().warning("[RoleSelectingPhase] 地图世界不存在, 无法部署参战玩家!");
-            return;
-        }
-        TeamManager teamManager = TeamManager.getInstance();
-        for(Player player : Bukkit.getOnlinePlayers()){
-            UUID uuid = player.getUniqueId();
-            ShdfTeam team = teamManager.getTeam(uuid);
-            if(team == null || !team.isCombatant()) continue;
-
-            Vector spawn = switch (team){
-                case ATTACKER -> config.getRoleSelectionAttackerSpawnpoint();
-                case DEFENDER -> config.getRoleSelectionDefenderSpawnpoint();
-                default -> null;
-            };
-            if(spawn != null){
-                player.teleport(spawn.toLocation(world));
-            }
-            player.setGameMode(GameMode.ADVENTURE);
-            PlayerStatus status = teamManager.getPlayerStatus(uuid);
-            if(status != null){
-                status.setState(PlayerState.IN_BATTLE);
-            }
-        }
     }
 
     // ==================== 交互 ====================

@@ -198,7 +198,7 @@ public class SectorManager {
                                 }
                             }
                         },
-                        0L, 1L);
+                        1L, 1L);
         bomb.setFuseTask(task);
     }
 

@@ -93,7 +93,7 @@ public class WaitingPhase implements GamePhase {
         inventoryClickSubscription = GameEventBus.subscribe(InventoryClickGameItemEvent.class, this::handleInventoryClickGameItem);
         quitSubscription = GameEventBus.subscribe(ShdfPlayerQuitEvent.class, event -> handlePlayerQuit(event.getPlayer()));
 
-        createSidebarObjective();
+        //updateSidebarObjective 内部会创建/重建侧边栏，无需先单独创建
         updateSidebarObjective();
 
         for(Player player : Bukkit.getOnlinePlayers()){
@@ -123,6 +123,11 @@ public class WaitingPhase implements GamePhase {
         clearScoreboardTeam();
         cancelCountdown("等待阶段结束");
         resetExperienceBar();
+        //注销侧边栏计分板目标，防止下一局同名注册冲突
+        if(sidebarObjective != null){
+            sidebarObjective.unregister();
+            sidebarObjective = null;
+        }
         //阶段切换清理：关闭所有打开的游戏 GUI
         ChestGui.closeAllGuis();
     }
@@ -190,9 +195,10 @@ public class WaitingPhase implements GamePhase {
                     player.playSound(player.getLocation(), Sound.UI_BUTTON_CLICK, 1f, 1f);
                 }
             }
-            //经验条显示剩余秒数（每秒更新一次）
+            //经验条与侧边栏倒计时行（每秒更新一次）
             if(tick % 20 == 0){
                 updateExperienceBar(tick);
+                updateSidebarObjective();
             }
         });
         countdown.setOnCancel(reason -> {
@@ -220,6 +226,8 @@ public class WaitingPhase implements GamePhase {
                 }
             }
             resetExperienceBar();
+            //移除"游戏将在…"倒计时行
+            updateSidebarObjective();
         });
         countdown.setOnFinish(() -> {
             resetExperienceBar();
@@ -263,14 +271,17 @@ public class WaitingPhase implements GamePhase {
     @SuppressWarnings("deprecated")
     private void updateSidebarObjective(){
         ConfigManager config = ConfigManager.getInstance();
-        sidebarObjective.unregister();
+        //重建侧边栏：先注销旧的（兼容跨阶段残留），再新建
+        if(sidebarObjective != null){
+            sidebarObjective.unregister();
+        }
         createSidebarObjective();
 
         sidebarObjective.getScore(ChatColor.WHITE + "" + ChatColor.BOLD + "准备阶段").setScore(-1);
         sidebarObjective.getScore("  ").setScore(-2);
         sidebarObjective.getScore(ChatColor.WHITE + "" + ChatColor.BOLD + "对局开始需要:").setScore(-3);
         if(isConformMinPlayerPerSide()){
-            sidebarObjective.getScore(ChatColor.GREEN + "- 双方各至少 " + config.getMinPopulationPerSide() + ChatColor.WHITE + " 名玩家").setScore(-4);
+            sidebarObjective.getScore(ChatColor.GREEN + "- 双方各至少 " + config.getMinPopulationPerSide() + ChatColor.GREEN + " 名玩家").setScore(-4);
         }
         else{
             sidebarObjective.getScore(ChatColor.GRAY + "- 双方各至少 " + config.getMinPopulationPerSide() + " 名玩家").setScore(-4);
@@ -292,6 +303,12 @@ public class WaitingPhase implements GamePhase {
             }
         }
         sidebarObjective.getScore("   ").setScore(-7);
+        //倒计时行：倒计时运行时在 -8 显示"游戏将在 mm:ss 后开始"
+        if(countdown != null && countdown.isRunning()){
+            int seconds = (int) Math.ceil(countdown.getRemainingTicks() / 20.0);
+            String mmss = String.format("%02d:%02d", seconds / 60, seconds % 60);
+            sidebarObjective.getScore(ChatColor.GOLD + "角色选择阶段 " + mmss + " 后开始").setScore(-8);
+        }
     }
 
     private void registerGameItems(){

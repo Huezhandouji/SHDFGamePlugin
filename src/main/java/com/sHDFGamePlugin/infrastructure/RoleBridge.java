@@ -8,6 +8,7 @@ import com.shadowHunterRolesPlugin.api.RoleAPI;
 import net.kyori.adventure.text.Component;
 import org.bukkit.Bukkit;
 import org.bukkit.Material;
+import org.bukkit.entity.LivingEntity;
 import org.bukkit.entity.Player;
 
 import java.util.*;
@@ -192,5 +193,15 @@ public class RoleBridge {
     //查询角色是否存在
     public boolean isValidRoleId(String roleId){
         return roleAPI.isValidRoleId(roleId);
+    }
+
+    /**
+     * 获取实体的最后伤害者 UUID（击杀归属用）。
+     * <p>
+     * 注意：角色插件的伤害做过特殊处理，查找"最后伤害者"必须用此方法，
+     * 不要使用原版 {@code LivingEntity#getKiller()} 等原版途径。
+     */
+    public UUID getLastDamagerUuid(LivingEntity entity){
+        return roleAPI.getLastDamagerUuid(entity);
     }
 }

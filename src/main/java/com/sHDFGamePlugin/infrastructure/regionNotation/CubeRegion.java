@@ -54,6 +54,7 @@ public class CubeRegion implements Region{
         return new CubeRegion(origin, size);
     }
 
+    @Override
     public Vector randomPoint(){
         double x = origin.getX() + Math.random() * size.getX();
         double y = origin.getY() + Math.random() * size.getY();

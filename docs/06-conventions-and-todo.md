@@ -35,25 +35,50 @@
 9. 依赖 `ShadowHunterRolesPlugin`（plugin.yml `depend`），RoleAPI 经
    `ServicesManager` 加载；`RoleBridge.setCurrentMapConfig` 要在应用角色前调用。
 10. 阶段切换不取消断线保护（保护需跨阶段）；**对局结束**（FinishedPhase）才 `cancelAll()`。
+11. **全局调度初始延迟必须 > 0**：`runAtFixedRate(plugin, task, delay, period)` 的 delay 写 0L
+    会抛 `IllegalArgumentException`（曾使 PLAYING `onEnter` 中断、玩家不变创造模式）——统一写 `1L`。
+12. **"死亡/等待"隐身用无粒子永久隐身效果**：`addPotionEffect(new PotionEffect(INVISIBILITY,
+    Integer.MAX_VALUE, 0, false, false, false))`，部署/转观战时 `removePotionEffect(INVISIBILITY)`
+    恢复可见；**不要用实体 `setInvisible` 标志位**（会被效果/原版逻辑覆盖，全库已清零）。
+13. **击杀归属必须 `RoleBridge.getLastDamagerUuid(entity)`**：角色插件伤害做过特殊处理，
+    勿用原版 `getKiller` 等原版途径。
 
 ## 四、TODO / 已知未接线
 
-- [ ] **PlayingPhase 战斗玩法**：
-  - 战斗菜单（slot 8 物品 + 按阵营/炸弹状态动态按钮，用 ChestGui.setSlot 刷新）；
-  - 安放/拆弹进度任务与打断（移动/受击/死亡）；
-  - 接 `SectorManager.onBombPlantSuccess/onBombDefuseSuccess`；
-  - 收 `BombExplodedEvent` → `isAllBombsExploded()` 后 `advanceToNextSector()` + 发 ticket_reward。
-- [ ] **对局结束判定**：全据点爆完 / `TicketDepletedEvent` / `SectorTimeLimitExpiredEvent`
-  → `transitionTo(FINISHED)`（FinishedPhase 清理已就绪）。
-- [ ] **死亡与部署流程**：PlayerDeathListener、`PlayerState.DEPLOYING`、
-  扣票、隐藏敌人、用 `selectedRoleId` 部署、部署点选择与预留的 lethal/tactical 接口。
-- [ ] `/sg` 调试子指令（bomb state / sector / nextround 等，便于无 GUI 验证）。
-- [ ] 空服回 IDLE 时是否补 `DisconnectProtection.cancelAll()`（当前任务自检在线，实际无害）。
-- [ ] `refreshOpenRoleGuis` 与 `openRoleSelectionGui` 过滤逻辑已一致；留意后续 GUI 内容来源统一。
-- [ ] `map_dust2` 在 config.yml maps 列表里但 maps.yml 未定义——属数据问题，加载会跳过并告警。
-- [ ] 版本基线：暂存区长期未 commit，建议定期 `git commit` 打基线（README 已存在）。
+### 已解决（本次交接前）
+- [x] PLAYING 入场模型：开局初始化链 + "对局将在 X 秒后开始"广播 + 全员等待重生
+  （与观战者同处旁观者出生点；创造 + 无粒子永久隐身效果 + 禁破坏/放置/攻击）+
+  重生倒计时结束自动部署至当前据点本方出生区（应用角色）。
+- [x] 真实死亡流程：取消原版死亡保持原地 → 死亡瞬间击杀广播（`RoleBridge.getLastDamagerUuid`）→
+  "你死了！"标题 → 进攻方死亡扣 1 票 → 每秒"将在 X 秒后重新部署" → 自动部署。
+- [x] 空服回 IDLE 清理（PLAYING：`cleanupMatchState` 含 `DisconnectProtection.cancelAll`；
+  ROLE_SELECTING 空服 quit 未补，任务自检在线实际无害）。
+- [x] 调度初始延迟 0→1 修复（`SectorTimeLimit` / `SectorManager.startBombFuse` / 重生驱动）。
+- [x] 部署点语义修正：`role_selection.*_spawnpoint` = 选角大厅；战斗部署一律用 maps.yml objective 出生区。
+- [x] 隐身改用无粒子永久隐身效果（`setInvisible` 全库清零）。
+- [x] config.yml `maps` 与 maps.yml 一致（map_crossfire；map_dust2 悬空问题已不存在）。
+- [x] 并行会话改动已并入：RoleSelectingPhase 侧边栏、`Region.randomPoint()` 上接口 + SphereRegion 实现。
+
+### 未完成（按建议顺序，详见 docs/07 §3）
+- [ ] PLAYING 战斗菜单：slot 8 物品 + 按阵营/炸弹状态动态按钮（`ChestGui.setSlot` 刷新，
+  id 前缀 `gameItem_playingPhase_`）。
+- [ ] 安放/拆弹进度任务与打断（移动/受击/死亡）→ 接
+  `SectorManager.onBombPlantSuccess` / `onBombDefuseSuccess`。
+- [ ] 据点推进：收 `BombExplodedEvent` → `isAllBombsExploded()` → 广播 +
+  `TicketManager.increaseTicket(reward)` → `advanceToNextSector()` → 重新部署/刷新。
+- [ ] 对局结束判定：全据点攻占（`isAllCaptured`）/ `TicketDepletedEvent` /
+  `SectorTimeLimitExpiredEvent` → `endMatch(胜方)` → `transitionTo(FINISHED)`（`matchEnded` 已预留）。
+- [ ] 战绩与结算展示：`PlayerStatus` + kills/deaths/bombsPlanted/bombsDefused；击杀归属用
+  `RoleBridge.getLastDamagerUuid`；`FinishedPhase` 重构为"广播战绩 → 停留数秒 → 清理+踢人 → IDLE"
+  （胜方静态注入；战绩读取须在 `TeamManager.reset()` 前；`onExit` 取消延时任务）。
+- [ ] 死亡流程遗留：仅对敌方隐身（当前全局隐身效果）、部署点选择与 lethal/tactical 预留、
+  死亡时打断进行中的安放/拆弹。
+- [ ] `/sg` 调试子指令（bomb state / sector / tickets / nextround 等）。
+- [ ] （低优）`refreshOpenRoleGuis` / `openRoleSelectionGui` 内容来源统一。
+- [ ] 版本基线：暂存区长期未 commit，交接前建议 `git commit` 打基线（README 已存在）。
 
 ## 五、目录索引
 
 - 源码总览与模块地图见 `README.md`
-- 各模块文档：`docs/01-overview.md` ~ `docs/05-command-listener-util.md`
+- 各模块文档：`docs/01-overview.md` ~ `docs/06-conventions-and-todo.md`
+- PLAYING 现状与后续（交接参考）：`docs/07-playingphase-status.md`

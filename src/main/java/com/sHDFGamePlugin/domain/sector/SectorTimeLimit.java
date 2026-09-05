@@ -49,7 +49,7 @@ public class SectorTimeLimit {
                         }
                     }
                 },
-                0L, 1L);
+                1L, 1L);
     }
 
     //暂停倒计时

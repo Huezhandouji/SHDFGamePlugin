@@ -45,19 +45,38 @@
 - 倒计时：`role_selection.duration`，≤0 回退 600 并自动 +1；30/20/10 秒播报。
 - 退出（quit）：**立即清空 selectedRoleId**（释放角色槽位），保留 PlayerStatus 走断线保护。
 - 收尾 `finishRoleSelection`：若**已无在线玩家** → 重置游戏状态并回 IDLE（有日志）；
-  否则未选玩家自动分配 → 部署（传送+IN_BATTLE）→ PLAYING。
+  否则未选玩家自动分配 → 切换 PLAYING（入场部署移交 PlayingPhase.onEnter：传送当前据点出生区 + 应用角色）。
 - 按钮注册表用 `HashBiMap<角色名, 按钮id>` 按阵营分两张；点击通过 `getByValue` 反查。
 - 注意：本阶段不应用角色（详见 06 约定），`RoleBridge` 的占用表在战斗阶段才会被填充。
 
-### PlayingPhase（本会话从空壳补了加入/退出；战斗玩法 TODO）
-- 当前只有 join/quit 处理：退出走断线保护（时长取 `playing.reconnect_time_limit`）；
-  加入时保留的 `IN_BATTLE` 战斗身份恢复（传回当前据点本方出生区），否则转观战者。
+### PlayingPhase（本会话从空壳补了开局初始化/等待重生入场/真实死亡/加入退出；战斗玩法 TODO）
+- `onEnter` 统一初始化本局系统（防御性清理 → `SectorManager.loadMap` / `TicketManager.init` /
+  `SpawnManager.setCurrentMapConfig`）后，**所有参战玩家先视为"死亡"状态等待重生**：
+  等待部署的玩家与观战者**一并传送至旁观者出生点**等待（地图世界）→ `DEPLOYING` + 进重生队列
+  （按 maps.yml `attacker_respawn_time` / `defender_respawn_time` 倒计时）→ 创造模式 +
+  **无粒子永久隐身效果**（非实体标志位）+ 不可碰撞，由阶段内守卫监听器禁止破坏/放置方块与攻击
+  （等待期预留给未来的战术道具选择）。
+- 重生倒计时结束 → **自动部署进场（无需点击物品）**：由 tick 驱动直接调
+  `SpawnManager.deployPlayer(uuid, selectedRoleId)`，此时才传送当前据点本方出生区随机点 →
+  ADVENTURE → 应用整场角色（`RoleBridge.setPlayerRole`，占用表此时填充）→ `IN_BATTLE`。
+  部署点一律取自 maps.yml 各 objective 的出生区域；`role_selection.*_spawnpoint` 只是选角大厅坐标。
+  等待期物品栏保持为空（本阶段未注册任何 GameItem；曾有的"部署进场"物品方案已移除）。
+- 进入对局时经 `MessageUtil` 广播"对局将在 X 秒后开始"（X = 双方重生时间较长者的秒数）。
+- **真实死亡流程**：`IN_BATTLE` 参战玩家死亡 → **取消原版死亡事件**（不掉落/无死亡界面，
+  停留原地不传送）→ 死亡瞬间广播击杀信息（击杀者经 `RoleBridge.getLastDamagerUuid` 定位，
+  勿用原版 `getKiller`）→ 受害者"你死了！"标题 → 进攻方死亡扣 1 票 → 原地转等待重生
+  （创造 + 无粒子隐身效果）→ 每秒播报"将在 X 秒后重新部署" → 倒计时结束自动部署
+  （部署时移除隐身效果恢复可见，复用出生区/角色应用逻辑）。
+- join/quit：退出走断线保护（时长取 `playing.reconnect_time_limit`）；加入时保留状态恢复——
+  `IN_BATTLE` 直接回场（重新应用角色）、`DEPLOYING` 恢复等待重生（倒计时已结束则立即自动部署），
+  否则转观战者；**空服退出会先清理本局系统状态再回 IDLE**，防止引信/据点时限等任务跨局残留。
 - TODO：炸弹安放/拆弹进度、战斗菜单、对局结束判定（见 06 文档）。
 
 ### FinishedPhase（本会话重写）
 - 对局清理：停炸弹任务（`SectorManager.cleanup`）→ 清队伍/重生队列/票数/角色占用 →
   `DisconnectProtection.cancelAll()` → 关 GUI → 重置在线玩家运行时状态 → 踢出所有玩家 → 回 IDLE。
 - 本阶段**不订阅 quit 事件**，踢人不会触发任何"保留状态"逻辑。
+- 注意：规划中的"战绩广播 + 停留数秒再清场"结算展示**尚未实现**（见 docs/07 §3.5）。
 
 ## 阶段间状态衔接的注意点
 

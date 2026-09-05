@@ -23,6 +23,7 @@ public class SphereRegion implements Region {
         this.radius = radius;
     }
 
+
     public Vector getCenter() {
         return center.clone();
     }
@@ -39,6 +40,29 @@ public class SphereRegion implements Region {
     @Override
     public SphereRegion copy() {
         return new SphereRegion(center, radius);
+    }
+
+    @Override
+    public Vector randomPoint() {
+        // 生成三个独立的随机数
+        double u = Math.random();
+        double v = Math.random();
+        double w = Math.random();
+
+        // 球面上的均匀分布方向
+        double theta = 2 * Math.PI * u;
+        double phi = Math.acos(2 * v - 1);
+
+        // 球体内的均匀半径
+        double r = radius * Math.cbrt(w);
+
+        // 计算偏移向量
+        double dx = r * Math.sin(phi) * Math.cos(theta);
+        double dy = r * Math.sin(phi) * Math.sin(theta);
+        double dz = r * Math.cos(phi);
+
+        // 返回球心+偏移
+        return center.clone().add(new Vector(dx, dy, dz));
     }
 
     //创建实例的静态方法

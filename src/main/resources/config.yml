@@ -29,7 +29,8 @@ role_selection:
   reconnect_time_limit: 400
   # 角色选择阶段所在世界
   world: "world"
-  # 角色选择结束后，双方进入对局的初始出生点
+  # 角色选择阶段双方阵营的等待大厅出生点（仅选角阶段使用）
+  # 注意：战斗阶段的部署点不是这里，而是 maps.yml 中各 objective 的 attacker/defender_spawn_region
   attacker_spawnpoint: { x: -30.0, y: 65.0, z: 200.0 }
   defender_spawnpoint: { x: 30.0, y: 65.0, z: 200.0 }
 

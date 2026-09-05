@@ -52,12 +52,20 @@ src/main/java/com/sHDFGamePlugin/
 | [docs/04-infrastructure.md](docs/04-infrastructure.md) | 基础设施：事件/配置/区域/物品/GUI/通用工具 |
 | [docs/05-command-listener-util.md](docs/05-command-listener-util.md) | 指令 / 监听器 / 工具类 |
 | [docs/06-conventions-and-todo.md](docs/06-conventions-and-todo.md) | 开发约定与 TODO |
+| [docs/07-playingphase-status.md](docs/07-playingphase-status.md) | PLAYING 现状与后续（交接参考：已实现行为链 / 待办 / 坑） |
 
 ## 当前进度
 
 - ✅ 状态机骨架、WAITING（大厅/准备/倒计时/侧边栏）
-- ✅ ROLE_SELECTING（选角 GUI/去重/自动分配/清除/断线重连）
-- ✅ 炸弹数据模型与 SectorManager 多炸弹状态机（领域层已就绪）
+- ✅ ROLE_SELECTING（选角 GUI/去重/自动分配/清除/断线重连/侧边栏）
+- ✅ 炸弹数据模型与 SectorManager 多炸弹状态机（领域层已就绪，含调度修复）
 - ✅ 玩家加入/退出与断线保护（DisconnectProtection）
 - ✅ FINISHED 对局清理（重置 + 踢人 + 回 IDLE）
-- ⏳ PLAYING 战斗玩法（炸弹安放/拆弹进度、对局结束触发）尚未接线
+- ✅ PLAYING 入场模型：开局初始化 + "对局将在 X 秒后开始"广播 + 全员等待重生
+  （与观战者同处旁观者出生点，创造 + 无粒子永久隐身效果 + 禁破坏/放置/攻击）
+  + 重生倒计时结束**自动部署**至当前据点本方出生区（应用角色）
+- ✅ PLAYING 真实死亡：取消原版死亡保持原地 → 死亡瞬间击杀广播
+  （`RoleBridge.getLastDamagerUuid`）→ "你死了！" → 进攻方死亡扣 1 票 →
+  每秒"将在 X 秒后重新部署" → 倒计时结束自动部署
+- ⏳ PLAYING 战斗玩法尚未接线：战斗菜单、安放/拆弹进度与打断、据点推进与奖励、
+  对局结束判定（票尽/据点超时/全据点攻占）、战绩结算展示（详见 docs/07 §3）

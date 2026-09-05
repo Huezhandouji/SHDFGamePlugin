@@ -26,9 +26,10 @@
 
 ## regionNotation（区域抽象）
 
-- `Region`：接口（getCenter / contains / copy）。
-- `CubeRegion`：立方体（origin+size 或角点 `createFromCorners`）；出生区/活动区/炸弹范围都用它。
-- `SphereRegion`：球体（center+radius），当前**未使用**（备用）。
+- `Region`：接口（getCenter / contains / copy / randomPoint）。
+- `CubeRegion`：立方体（origin+size 或角点 `createFromCorners`）；`randomPoint()` 随机盒内点；
+  出生区/活动区/炸弹范围都用它。
+- `SphereRegion`：球体（center+radius），`randomPoint()` 为球内均匀随机点；当前**未使用**（备用）。
 - 注意：包名是 `regionNotation`（此前从 regionExpression 迁移）；其他包引用此包。
 
 ## item（物品交互系统，原代码 + 优化）
@@ -67,8 +68,9 @@
 - `init()` 通过 `ServicesManager` 加载 RoleAPI（缺失抛异常）。
 - **角色应用应只在战斗阶段**：`setPlayerRole(uuid, roleId)` 做阵营角色池校验、
   重复检查（`allowDuplicateRoles` + 占用表 `attackerPlayerRoleMap/defenderPlayerRoleMap`）后调用 RoleAPI。
-- 选择阶段只用其**查询**：`isValidRoleId`、`isAllowDuplicateRoles`、`getOccupiedRoles`、
-  `getRoleDisplayName/Description/Icon`（透传 RoleAPI）。
+- 查询透传：`isValidRoleId`、`isAllowDuplicateRoles`、`getOccupiedRoles`、
+  `getRoleDisplayName/Description/Icon`、**`getLastDamagerUuid(entity)`**（击杀归属用：
+  角色插件伤害做过特殊处理，**勿用原版 `getKiller`**）。
 - 注意（重要，易踩坑）：
   - **RoleAPI 对不存在的角色返回"假空值"而非 null**：`getRoleIcon` 返回 `Material.AIR`、
     `getRoleDisplayName/Description` 返回空 Component——判断时要把 AIR / `Component.empty()` 也算缺失。

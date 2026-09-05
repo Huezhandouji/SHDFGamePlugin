@@ -15,4 +15,6 @@ public interface Region{
 
     public Region copy();
 
+    public Vector randomPoint();
+
 }
