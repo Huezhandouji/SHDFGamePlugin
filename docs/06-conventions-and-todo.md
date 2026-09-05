@@ -60,10 +60,10 @@
 - [x] 并行会话改动已并入：RoleSelectingPhase 侧边栏、`Region.randomPoint()` 上接口 + SphereRegion 实现。
 
 ### 未完成（按建议顺序，详见 docs/07 §3）
-- [ ] PLAYING 战斗菜单：slot 8 物品 + 按阵营/炸弹状态动态按钮（`ChestGui.setSlot` 刷新，
-  id 前缀 `gameItem_playingPhase_`）。
-- [ ] 安放/拆弹进度任务与打断（移动/受击/死亡）→ 接
-  `SectorManager.onBombPlantSuccess` / `onBombDefuseSuccess`。
+- [x] ~~PLAYING 战斗菜单~~ 已取消：改为 slot 8 物品直连装弹/拆弹。
+- [x] 安放/拆弹进度与打断：进攻方 slot 8 TNT 矿车、防守方 slot 8 剪刀，在炸弹范围内右键开始，
+  按 `plant_time` / `defuse_time` 读条完成；移动/受伤/死亡/炸弹状态变化会打断；完成时接
+  `SectorManager.onBombPlantSuccess` / `onBombDefuseSuccess`；PLANTED 炸弹每秒在中心点生成红色灰尘粒子。
 - [ ] 据点推进：收 `BombExplodedEvent` → `isAllBombsExploded()` → 广播 +
   `TicketManager.increaseTicket(reward)` → `advanceToNextSector()` → 重新部署/刷新。
 - [ ] 对局结束判定：全据点攻占（`isAllCaptured`）/ `TicketDepletedEvent` /

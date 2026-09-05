@@ -5,8 +5,8 @@
 
 ## 0. 一句话现状
 
-能"进对局、等重生、自动部署、战死→等待→自动复活"，但**炸弹玩法与胜负结算未接**：
-没有战斗菜单/安放拆弹/据点推进/结束判定。进攻方扣票已生效，但票尽**不会**结束对局。
+能"进对局、等重生、自动部署、战死→等待→自动复活"，且**装弹/拆弹已接线**；
+但据点推进/结束判定/战绩结算尚未接。进攻方扣票已生效，但票尽**不会**结束对局。
 
 ## 1. 已实现行为链（代码为准）
 
@@ -42,6 +42,18 @@ ADVENTURE → `IN_BATTLE` → `RoleBridge.setPlayerRole(uuid, selectedRoleId)`�
   （`playing.reconnect_time_limit`），超时清 PlayerStatus / 重生队列 / 角色占用。
 - `onExit`：注销订阅与两个 Bukkit 监听器、停 tick 任务、清各集合、关 GUI、清快捷栏 slot 0/8。
 
+### 1.5 装弹 / 拆弹（本会话新增）
+- 物品：进攻方 slot 8 = TNT 矿车（`gameItem_playingPhase_plantBomb`），防守方 slot 8 = 剪刀
+  （`gameItem_playingPhase_defuseBomb`）；部署/重连回场时发放，死亡/转观战清空。
+- 交互：右键物品（`RightClickGameItemEvent`）→ 校验 IN_BATTLE + 阵营匹配 → 定位玩家所处炸弹
+  （`ActiveBomb.getConfig().getRegion().contains`）→ 校验炸弹状态（装弹需 UNPLANTED，拆弹需 PLANTED）
+  → 挂起 `BombProgress`。
+- 进度：每 tick 递减 `plant_time` / `defuse_time`；每 tick 校验（在线、IN_BATTLE、阵营、仍在同一
+  炸弹范围、炸弹状态未变、未移动、未受伤），任一不满足即打断；完成时调
+  `SectorManager.onBombPlantSuccess` / `onBombDefuseSuccess`。
+- 表现：ActionBar 显示进度百分比；已安放（PLANTED）炸弹由 `bombParticleTask` 每秒在区域中心点
+  生成红色灰尘粒子（`Particle.DUST` + `DustOptions(Color.RED, 1.5f)`）。
+
 ## 2. 已修复 / 已澄清的关键点（勿回退）
 
 - **调度初始延迟必须 > 0**：`GlobalRegionScheduler.runAtFixedRate(..., 0L, 1L)` 抛
@@ -59,22 +71,18 @@ ADVENTURE → `IN_BATTLE` → `RoleBridge.setPlayerRole(uuid, selectedRoleId)`�
 
 ## 3. 本阶段还需要做（建议顺序）
 
-1. **战斗菜单**：slot 8 物品（id 前缀 `gameItem_playingPhase_`）+ 按阵营/炸弹状态动态按钮，
-   用 `ChestGui.setSlot` 刷新（参考 RoleSelectingPhase 的按钮注册表 + `HashBiMap<bombId,itemId>` 模式）。
-2. **安放/拆弹进度任务与打断**（移动/受击/死亡）→ 接 `SectorManager.onBombPlantSuccess` /
-   `onBombDefuseSuccess`（引信调度 bug 已修，安放后可正常引爆）。
-3. **据点推进**：订阅炸弹三事件 → 全部爆炸后 `TicketManager.increaseTicket(reward)` + 广播 →
-   `advanceToNextSector()` → 重新部署/刷新菜单；`isAllCaptured()` → 进攻方胜。
-4. **对局结束判定**：`TicketDepletedEvent` / `SectorTimeLimitExpiredEvent` / 全据点攻占 →
+1. **据点推进**：订阅炸弹三事件 → 全部爆炸后 `TicketManager.increaseTicket(reward)` + 广播 →
+   `advanceToNextSector()` → 重新部署；`isAllCaptured()` → 进攻方胜。
+2. **对局结束判定**：`TicketDepletedEvent` / `SectorTimeLimitExpiredEvent` / 全据点攻占 →
    `endMatch(胜方)` → `transitionTo(FINISHED)`（`matchEnded` 字段已预留防竞态）。
-5. **战绩与结算展示**（此前已拍板未实现）：`PlayerStatus` + kills/deaths/bombsPlanted/bombsDefused；
+3. **战绩与结算展示**（此前已拍板未实现）：`PlayerStatus` + kills/deaths/bombsPlanted/bombsDefused；
    击杀归属用 `RoleBridge.getLastDamagerUuid`；`FinishedPhase` 重构为"广播战绩 → 停留数秒 →
    清理+踢人 → IDLE"（胜方经静态 `setMatchResult` 注入；读战绩须在 `TeamManager.reset()` 前；
    `onExit` 取消延时任务）。
-6. **死亡流程遗留**：仅对敌方隐身（当前全局隐身效果）、部署点选择与 lethal/tactical 预留、
-   死亡时打断进行中的安放/拆弹。
-7. **`/sg` 调试子指令**（bomb state / sector / tickets / nextround 等）。
-8. **版本基线**：暂存区已积压多轮改动，建议 `git commit` 打基线后再继续。
+4. **死亡流程遗留**：仅对敌方隐身（当前全局隐身效果）、部署点选择与 lethal/tactical 预留。
+   （死亡时打断装弹/拆弹已在 `handlePlayerDeath` 中处理。）
+5. **`/sg` 调试子指令**（bomb state / sector / tickets / nextround 等）。
+6. **版本基线**：暂存区已积压多轮改动，建议 `git commit` 打基线后再继续。
 
 ## 4. 已知边界 / 潜在问题
 
@@ -90,4 +98,4 @@ ADVENTURE → `IN_BATTLE` → `RoleBridge.setPlayerRole(uuid, selectedRoleId)`�
 - `PlayerState`：WAITING / ROLE_SELECTING / **DEPLOYING**（=等待部署，开局全员与死后共用）/ IN_BATTLE。
 - 地图 `attacker_respawn_time` / `defender_respawn_time` 同时充当"开局部署倒计时"与"死亡重生时间"。
 - 阶段内维护集合：`deployFailureLogged`（部署失败日志去重）、`deathCountdownLastSecond`（死亡播报去重）。
-- 事件订阅（bus）：仅 join/quit；Bukkit 监听器（阶段注册）：等待守卫 + 死亡。
+- 事件订阅（bus）：join / quit / RightClickGameItemEvent（装弹拆弹）；Bukkit 监听器（阶段注册）：等待守卫 + 死亡。

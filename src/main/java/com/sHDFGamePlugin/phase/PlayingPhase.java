@@ -3,6 +3,8 @@ package com.sHDFGamePlugin.phase;
 import com.sHDFGamePlugin.core.GameContext;
 import com.sHDFGamePlugin.core.GameState;
 import com.sHDFGamePlugin.core.GameStateMachine;
+import com.sHDFGamePlugin.domain.sector.ActiveBomb;
+import com.sHDFGamePlugin.domain.sector.BombState;
 import com.sHDFGamePlugin.domain.sector.Sector;
 import com.sHDFGamePlugin.domain.sector.SectorManager;
 import com.sHDFGamePlugin.domain.spawn.SpawnManager;
@@ -16,9 +18,12 @@ import com.sHDFGamePlugin.infrastructure.GameEventBus;
 import com.sHDFGamePlugin.infrastructure.RoleBridge;
 import com.sHDFGamePlugin.infrastructure.config.ConfigManager;
 import com.sHDFGamePlugin.infrastructure.config.MapConfig;
+import com.sHDFGamePlugin.infrastructure.event.RightClickGameItemEvent;
 import com.sHDFGamePlugin.infrastructure.event.ShdfPlayerJoinEvent;
 import com.sHDFGamePlugin.infrastructure.event.ShdfPlayerQuitEvent;
 import com.sHDFGamePlugin.infrastructure.gui.ChestGui;
+import com.sHDFGamePlugin.infrastructure.item.GameItem;
+import com.sHDFGamePlugin.infrastructure.item.GameItemRegistry;
 import com.sHDFGamePlugin.infrastructure.regionNotation.CubeRegion;
 import com.sHDFGamePlugin.util.MessageUtil;
 import com.sHDFGamePlugin.util.SoundUtil;
@@ -28,8 +33,12 @@ import net.kyori.adventure.text.format.NamedTextColor;
 import net.kyori.adventure.text.format.TextDecoration;
 import net.kyori.adventure.title.Title;
 import org.bukkit.Bukkit;
+import org.bukkit.Color;
 import org.bukkit.GameMode;
 import org.bukkit.Location;
+import org.bukkit.Material;
+import org.bukkit.Particle;
+import org.bukkit.Sound;
 import org.bukkit.World;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
@@ -39,13 +48,17 @@ import org.bukkit.event.block.BlockBreakEvent;
 import org.bukkit.event.block.BlockPlaceEvent;
 import org.bukkit.event.entity.EntityDamageByEntityEvent;
 import org.bukkit.event.entity.PlayerDeathEvent;
+import org.bukkit.inventory.ItemStack;
+import org.bukkit.inventory.meta.ItemMeta;
 import org.bukkit.potion.PotionEffect;
 import org.bukkit.potion.PotionEffectType;
 import org.bukkit.util.Vector;
 
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
@@ -75,6 +88,10 @@ public class PlayingPhase implements GamePhase {
 
     private static final PlayingPhase INSTANCE = new PlayingPhase();
 
+    //装弹/拆弹 GameItem id（阶段前缀风格）
+    private static final String PLANT_ITEM_ID = "gameItem_playingPhase_plantBomb";
+    private static final String DEFUSE_ITEM_ID = "gameItem_playingPhase_defuseBomb";
+
     private PlayingPhase() {}
 
     public static PlayingPhase getInstance() {
@@ -84,9 +101,17 @@ public class PlayingPhase implements GamePhase {
     //事件订阅
     private GameEventBus.Subscription joinSubscription;
     private GameEventBus.Subscription quitSubscription;
+    private GameEventBus.Subscription rightClickSubscription;
 
     //重生倒计时 tick 驱动任务
     private ScheduledTask respawnTickTask;
+
+    //装弹/拆弹进度驱动任务 + 已激活炸弹粒子任务
+    private ScheduledTask bombProgressTickTask;
+    private ScheduledTask bombParticleTask;
+
+    //进行中的装弹/拆弹进度：玩家 uuid -> 进度
+    private final Map<UUID, BombProgress> activeProgresses = new HashMap<>();
 
     //自动部署失败的玩家（用于失败日志去重，成功后移除）
     private final Set<UUID> deployFailureLogged = new HashSet<>();
@@ -122,11 +147,22 @@ public class PlayingPhase implements GamePhase {
         startRespawnTickTask();
         //7. 订阅事件
         subscribeEvents();
+        //8. 注册装弹/拆弹物品并订阅右键交互
+        registerBombInteractionItems();
+        subscribeBombInteraction();
+        //9. 启动装弹/拆弹进度驱动与已激活炸弹粒子效果
+        startBombProgressTickTask();
+        startBombParticleTask();
     }
 
     @Override
     public void onExit() {
         unsubscribeEvents();
+        unsubscribeBombInteraction();
+        stopBombProgressTickTask();
+        stopBombParticleTask();
+        activeProgresses.clear();
+        unregisterBombInteractionItems();
         stopRespawnTickTask();
         unregisterGuard();
         unregisterDeathListener();
@@ -282,6 +318,7 @@ public class PlayingPhase implements GamePhase {
         player.setCollidable(true);
         player.setHealth(player.getMaxHealth());
         player.setFoodLevel(20);
+        giveBombInteractionItem(player, status.getTeam());
         MessageUtil.sendMessageWithPrefix(player, Component.text("已部署进场, 开始行动!", NamedTextColor.GREEN));
         SoundUtil.playNoticeSuccessCombinedSound(player);
     }
@@ -330,6 +367,9 @@ public class PlayingPhase implements GamePhase {
         PlayerStatus status = TeamManager.getInstance().getPlayerStatus(victim.getUniqueId());
         if(status == null || status.getTeam() == null || !status.getTeam().isCombatant()) return;
         if(status.getState() != PlayerState.IN_BATTLE) return;
+
+        //死亡中断正在进行的装弹/拆弹
+        activeProgresses.remove(victim.getUniqueId());
 
         //取消原版死亡：不掉落物品、不出现死亡界面，玩家停留在死亡位置（不传送）
         event.setCancelled(true);
@@ -484,6 +524,7 @@ public class PlayingPhase implements GamePhase {
             player.teleport(spawnRegion.randomPoint().toLocation(world));
         }
         applyRole(player, status);
+        giveBombInteractionItem(player, status.getTeam());
 
         MessageUtil.sendMessageWithPrefix(player, Component.text("欢迎回来, 你仍在对局中", NamedTextColor.GREEN));
     }
@@ -599,6 +640,302 @@ public class PlayingPhase implements GamePhase {
         DisconnectProtection.getInstance().cancelAll();
         //关闭所有打开的游戏 GUI
         ChestGui.closeAllGuis();
+    }
+
+    // ==================== 装弹 / 拆弹（炸弹交互） ====================
+
+    /** 注册进攻方"装弹"物品（TNT 矿车）与防守方"拆弹"物品（剪刀） */
+    private void registerBombInteractionItems(){
+        GameItemRegistry.createAndRegister(PLANT_ITEM_ID, builder ->
+                builder.canDrop(false).canMove(false)
+                        .rightClickHandler(event ->
+                                GameEventBus.publish(new RightClickGameItemEvent(event.getPlayer(), PLANT_ITEM_ID))));
+        GameItemRegistry.createAndRegister(DEFUSE_ITEM_ID, builder ->
+                builder.canDrop(false).canMove(false)
+                        .rightClickHandler(event ->
+                                GameEventBus.publish(new RightClickGameItemEvent(event.getPlayer(), DEFUSE_ITEM_ID))));
+    }
+
+    private void unregisterBombInteractionItems(){
+        GameItemRegistry.unregister(PLANT_ITEM_ID);
+        GameItemRegistry.unregister(DEFUSE_ITEM_ID);
+    }
+
+    private void subscribeBombInteraction(){
+        rightClickSubscription = GameEventBus.subscribe(RightClickGameItemEvent.class, this::handleBombInteractionRightClick);
+    }
+
+    private void unsubscribeBombInteraction(){
+        if(rightClickSubscription != null){
+            rightClickSubscription.unsubscribe();
+            rightClickSubscription = null;
+        }
+    }
+
+    /** 给参战玩家发放 slot 8 的阵营交互物品：进攻方=装弹（TNT 矿车），防守方=拆弹（剪刀） */
+    private void giveBombInteractionItem(Player player, ShdfTeam team){
+        if(team == ShdfTeam.ATTACKER){
+            player.getInventory().setItem(8, createPlantItem());
+        }
+        else if(team == ShdfTeam.DEFENDER){
+            player.getInventory().setItem(8, createDefuseItem());
+        }
+    }
+
+    private ItemStack createPlantItem(){
+        ItemStack item = new ItemStack(Material.TNT_MINECART);
+        ItemMeta meta = item.getItemMeta();
+        meta.displayName(Component.text("装弹装置", NamedTextColor.RED, TextDecoration.BOLD));
+        meta.lore(List.of(Component.text("在炸弹范围内右键开始装弹", NamedTextColor.GRAY)));
+        meta = GameItem.applyIdOnItemMeta(PLANT_ITEM_ID, meta);
+        item.setItemMeta(meta);
+        return item;
+    }
+
+    private ItemStack createDefuseItem(){
+        ItemStack item = new ItemStack(Material.SHEARS);
+        ItemMeta meta = item.getItemMeta();
+        meta.displayName(Component.text("拆弹工具", NamedTextColor.AQUA, TextDecoration.BOLD));
+        meta.lore(List.of(Component.text("在炸弹范围内右键开始拆弹", NamedTextColor.GRAY)));
+        meta = GameItem.applyIdOnItemMeta(DEFUSE_ITEM_ID, meta);
+        item.setItemMeta(meta);
+        return item;
+    }
+
+    /** 右键装弹/拆弹物品入口：校验身份后开始对应炸弹的进度 */
+    private void handleBombInteractionRightClick(RightClickGameItemEvent event){
+        if(matchEnded) return;
+        Player player = event.getPlayer();
+        String itemId = event.getGameItemId();
+
+        PlayerStatus status = TeamManager.getInstance().getPlayerStatus(player.getUniqueId());
+        if(status == null || status.getState() != PlayerState.IN_BATTLE || !status.getTeam().isCombatant()) return;
+
+        boolean isPlant;
+        if(itemId.equals(PLANT_ITEM_ID)){
+            if(status.getTeam() != ShdfTeam.ATTACKER) return;
+            isPlant = true;
+        }
+        else if(itemId.equals(DEFUSE_ITEM_ID)){
+            if(status.getTeam() != ShdfTeam.DEFENDER) return;
+            isPlant = false;
+        }
+        else{
+            return;
+        }
+
+        tryStartBombProgress(player, isPlant);
+    }
+
+    /** 尝试开始装弹/拆弹：定位范围内的炸弹并校验其状态，通过则挂起进度 */
+    private void tryStartBombProgress(Player player, boolean isPlant){
+        UUID uuid = player.getUniqueId();
+        //已有进行中的操作：忽略重复右键，避免进度被重置
+        if(activeProgresses.containsKey(uuid)){
+            return;
+        }
+
+        ActiveBomb target = findBombInRange(player);
+        if(target == null){
+            MessageUtil.sendMessageWithPrefix(player, Component.text("你不在任何炸弹范围内", NamedTextColor.RED));
+            return;
+        }
+
+        BombState state = target.getState();
+        if(isPlant){
+            if(state != BombState.UNPLANTED){
+                MessageUtil.sendMessageWithPrefix(player, Component.text("该炸弹当前无法装弹", NamedTextColor.RED));
+                return;
+            }
+            startBombProgress(player, target.getId(), true, target.getConfig().getPlantTime());
+        }
+        else{
+            if(state != BombState.PLANTED){
+                MessageUtil.sendMessageWithPrefix(player, Component.text("该炸弹尚未安放, 无法拆弹", NamedTextColor.RED));
+                return;
+            }
+            startBombProgress(player, target.getId(), false, target.getConfig().getDefuseTime());
+        }
+    }
+
+    /** 找到玩家当前所处的炸弹（区域包含玩家位置） */
+    private ActiveBomb findBombInRange(Player player){
+        Vector playerPos = player.getLocation().toVector();
+        for(ActiveBomb bomb : SectorManager.getInstance().getActiveBombs()){
+            if(bomb.getConfig().getRegion().contains(playerPos)){
+                return bomb;
+            }
+        }
+        return null;
+    }
+
+    private void startBombProgress(Player player, String bombId, boolean isPlant, int totalTicks){
+        UUID uuid = player.getUniqueId();
+        activeProgresses.put(uuid, new BombProgress(uuid, bombId, isPlant, totalTicks, player));
+        String action = isPlant ? "装弹" : "拆弹";
+        MessageUtil.sendMessageWithPrefix(player, Component.text("开始" + action + ", 保持站立并留在范围内", NamedTextColor.YELLOW));
+        player.playSound(player.getLocation(), Sound.BLOCK_NOTE_BLOCK_PLING, 1f, 1f);
+    }
+
+    private void startBombProgressTickTask(){
+        bombProgressTickTask = GameContext.getInstance().getPlugin().getServer().getGlobalRegionScheduler()
+                .runAtFixedRate(GameContext.getInstance().getPlugin(),
+                        scheduledTask -> tickBombProgresses(),
+                        1L, 1L);
+    }
+
+    private void stopBombProgressTickTask(){
+        if(bombProgressTickTask != null){
+            bombProgressTickTask.cancel();
+            bombProgressTickTask = null;
+        }
+    }
+
+    private void tickBombProgresses(){
+        if(activeProgresses.isEmpty()) return;
+        for(UUID uuid : new ArrayList<>(activeProgresses.keySet())){
+            BombProgress progress = activeProgresses.get(uuid);
+            if(progress == null) continue;
+
+            Player player = Bukkit.getPlayer(uuid);
+            if(player == null || !player.isOnline()){
+                activeProgresses.remove(uuid);
+                continue;
+            }
+
+            if(!isBombProgressValid(player, progress)){
+                cancelBombProgress(uuid, player, progress);
+                continue;
+            }
+
+            progress.remainingTicks -= 1;
+            if(progress.remainingTicks <= 0){
+                completeBombProgress(player, progress);
+                continue;
+            }
+            showBombProgress(player, progress);
+        }
+    }
+
+    /** 进度是否仍有效：在线参战、阵营匹配、仍在同一炸弹范围、炸弹状态未变、未移动、未受伤 */
+    private boolean isBombProgressValid(Player player, BombProgress progress){
+        if(matchEnded) return false;
+
+        PlayerStatus status = TeamManager.getInstance().getPlayerStatus(player.getUniqueId());
+        if(status == null || status.getState() != PlayerState.IN_BATTLE || !status.getTeam().isCombatant()) return false;
+        if(progress.isPlant && status.getTeam() != ShdfTeam.ATTACKER) return false;
+        if(!progress.isPlant && status.getTeam() != ShdfTeam.DEFENDER) return false;
+
+        ActiveBomb bomb = SectorManager.getInstance().getActiveBomb(progress.bombId);
+        if(bomb == null) return false;
+        if(!bomb.getConfig().getRegion().contains(player.getLocation().toVector())) return false;
+        if(progress.isPlant){
+            if(bomb.getState() != BombState.UNPLANTED) return false;
+        }
+        else{
+            if(bomb.getState() != BombState.PLANTED) return false;
+        }
+
+        //玩家移动过（超过约 0.25 格）即打断
+        if(player.getLocation().distanceSquared(progress.startLocation) > 0.0625) return false;
+        //玩家受伤（生命值下降）即打断
+        if(player.getHealth() < progress.startHealth) return false;
+        return true;
+    }
+
+    private void showBombProgress(Player player, BombProgress progress){
+        double percent = (progress.totalTicks - progress.remainingTicks) / (double) progress.totalTicks;
+        String action = progress.isPlant ? "装弹" : "拆弹";
+        player.sendActionBar(Component.text(action + "中... " + (int)(percent * 100) + "%", NamedTextColor.GOLD));
+    }
+
+    private void cancelBombProgress(UUID uuid, Player player, BombProgress progress){
+        activeProgresses.remove(uuid);
+        if(player.isOnline()){
+            String action = progress.isPlant ? "装弹" : "拆弹";
+            MessageUtil.sendMessageWithPrefix(player, Component.text(action + "被打断", NamedTextColor.RED));
+            SoundUtil.playNoticeFailCombinedSound(player);
+        }
+    }
+
+    private void completeBombProgress(Player player, BombProgress progress){
+        activeProgresses.remove(progress.uuid);
+
+        boolean success;
+        if(progress.isPlant){
+            success = SectorManager.getInstance().onBombPlantSuccess(progress.bombId);
+        }
+        else{
+            success = SectorManager.getInstance().onBombDefuseSuccess(progress.bombId);
+        }
+
+        if(success){
+            if(progress.isPlant){
+                MessageUtil.sendMessageWithPrefix(player, Component.text("装弹成功!", NamedTextColor.GREEN));
+                MessageUtil.broadcastPrefixedMessage(Component.text(player.getName() + " 安放了炸弹", NamedTextColor.RED));
+            }
+            else{
+                MessageUtil.sendMessageWithPrefix(player, Component.text("拆弹成功!", NamedTextColor.GREEN));
+                MessageUtil.broadcastPrefixedMessage(Component.text(player.getName() + " 拆除了炸弹", NamedTextColor.AQUA));
+            }
+            SoundUtil.playNoticeSuccessCombinedSound(player);
+        }
+        else{
+            MessageUtil.sendMessageWithPrefix(player, Component.text("操作失败, 炸弹状态已改变", NamedTextColor.RED));
+        }
+    }
+
+    // ==================== 已激活炸弹粒子 ====================
+
+    /** 每秒为已安放（PLANTED）炸弹的中心点生成一团红色灰尘粒子 */
+    private void startBombParticleTask(){
+        bombParticleTask = GameContext.getInstance().getPlugin().getServer().getGlobalRegionScheduler()
+                .runAtFixedRate(GameContext.getInstance().getPlugin(),
+                        scheduledTask -> spawnActivatedBombParticles(),
+                        1L, 20L);
+    }
+
+    private void stopBombParticleTask(){
+        if(bombParticleTask != null){
+            bombParticleTask.cancel();
+            bombParticleTask = null;
+        }
+    }
+
+    private void spawnActivatedBombParticles(){
+        if(matchEnded) return;
+        MapConfig mapConfig = ConfigManager.getInstance().getSelectedMapConfig();
+        if(mapConfig == null) return;
+        World world = Bukkit.getWorld(mapConfig.getWorld());
+        if(world == null) return;
+
+        for(ActiveBomb bomb : SectorManager.getInstance().getActiveBombs()){
+            if(bomb.getState() != BombState.PLANTED) continue;
+            Vector center = bomb.getConfig().getRegion().getCenter();
+            world.spawnParticle(Particle.DUST, center.toLocation(world), 30, 0.4, 0.4, 0.4, 0,
+                    new Particle.DustOptions(Color.RED, 1.5f));
+        }
+    }
+
+    /** 单个装弹/拆弹进度 */
+    private static class BombProgress {
+        final UUID uuid;
+        final String bombId;
+        final boolean isPlant;
+        final int totalTicks;
+        int remainingTicks;
+        final double startHealth;
+        final Location startLocation;
+
+        BombProgress(UUID uuid, String bombId, boolean isPlant, int totalTicks, Player player){
+            this.uuid = uuid;
+            this.bombId = bombId;
+            this.isPlant = isPlant;
+            this.totalTicks = totalTicks;
+            this.remainingTicks = totalTicks;
+            this.startHealth = player.getHealth();
+            this.startLocation = player.getLocation().clone();
+        }
     }
 
     // ==================== 事件订阅 ====================
