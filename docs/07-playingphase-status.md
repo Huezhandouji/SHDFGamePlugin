@@ -42,15 +42,19 @@ ADVENTURE → `IN_BATTLE` → `RoleBridge.setPlayerRole(uuid, selectedRoleId)`�
   （`playing.reconnect_time_limit`），超时清 PlayerStatus / 重生队列 / 角色占用。
 - `onExit`：注销订阅与两个 Bukkit 监听器、停 tick 任务、清各集合、关 GUI、清快捷栏 slot 0/8。
 
-### 1.5 装弹 / 拆弹（本会话新增）
-- 物品：进攻方 slot 8 = TNT 矿车（`gameItem_playingPhase_plantBomb`），防守方 slot 8 = 剪刀
+### 1.5 装弹 / 拆弹 / 战斗菜单（本会话新增）
+- 物品：进攻方 slot 7 = TNT 矿车（`gameItem_playingPhase_plantBomb`），防守方 slot 7 = 剪刀
   （`gameItem_playingPhase_defuseBomb`）；部署/重连回场时发放，死亡/转观战清空。
+- 战斗菜单：slot 8 = 悬挂式橡木告示牌（`gameItem_playingPhase_battleMenu`），战斗/等待重生等状态
+  都保留（`setAwaitingLook` 清空背包时跳过 slot 8）；右键打开空箱子菜单（空实现，后续填充）。
 - 交互：右键物品（`RightClickGameItemEvent`）→ 校验 IN_BATTLE + 阵营匹配 → 定位玩家所处炸弹
   （`ActiveBomb.getConfig().getRegion().contains`）→ 校验炸弹状态（装弹需 UNPLANTED，拆弹需 PLANTED）
   → 挂起 `BombProgress`。
 - 进度：每 tick 递减 `plant_time` / `defuse_time`；每 tick 校验（在线、IN_BATTLE、阵营、仍在同一
-  炸弹范围、炸弹状态未变、未移动、未受伤），任一不满足即打断；完成时调
+  炸弹范围、炸弹状态未变、未受伤），任一不满足即打断；完成时调
   `SectorManager.onBombPlantSuccess` / `onBombDefuseSuccess`。
+- 冻结与取消：读条期间由 `BombProgressFreezeListener`（PlayerMoveEvent）冻结位置移动（保留视角）；
+  再次右键对应物品取消操作；进度被移除（完成/取消/打断/死亡）即自动恢复移动。
 - 表现：ActionBar 显示进度百分比；已安放（PLANTED）炸弹由 `bombParticleTask` 每秒在区域中心点
   生成红色灰尘粒子（`Particle.DUST` + `DustOptions(Color.RED, 1.5f)`）。
 
@@ -61,6 +65,11 @@ ADVENTURE → `IN_BATTLE` → `RoleBridge.setPlayerRole(uuid, selectedRoleId)`�
   `SectorManager.startBombFuse` / 重生驱动已统一为 `1L`。
 - **部署点语义**：`role_selection.*_spawnpoint` = 选角大厅坐标；战斗部署一律用 maps.yml
   各 objective 的出生区（`Sector.getAttacker/DefenderSpawnRegion`）。
+- **部署原子性**：`SpawnManager.deployPlayer` 先应用角色、成功后才传送/置 IN_BATTLE；角色应用失败
+  保持 DEPLOYING 等待重试，避免"已传送但未发装弹/拆弹物品"的半部署状态。
+- **死亡释放角色占用**：死亡时 `RoleBridge.clearPlayerRole` 释放角色占用，重新部署时重新应用；
+  `clearPlayerRole` 无条件清本地占用表（即使角色插件已自行清空角色），否则死亡后本地占用表残留会导致
+  重部署时重复角色校验失败、玩家一直等待。
 - **隐身方案**：无粒子永久隐身**效果**，部署/转观战/回场时 `removePotionEffect(INVISIBILITY)`；
   全库已无 `setInvisible`（标志位会被效果/原版逻辑覆盖，勿用）。
 - **击杀归属**：必须 `RoleBridge.getLastDamagerUuid(entity)`（角色插件伤害特殊处理），勿用原版 `getKiller`。
@@ -98,4 +107,4 @@ ADVENTURE → `IN_BATTLE` → `RoleBridge.setPlayerRole(uuid, selectedRoleId)`�
 - `PlayerState`：WAITING / ROLE_SELECTING / **DEPLOYING**（=等待部署，开局全员与死后共用）/ IN_BATTLE。
 - 地图 `attacker_respawn_time` / `defender_respawn_time` 同时充当"开局部署倒计时"与"死亡重生时间"。
 - 阶段内维护集合：`deployFailureLogged`（部署失败日志去重）、`deathCountdownLastSecond`（死亡播报去重）。
-- 事件订阅（bus）：join / quit / RightClickGameItemEvent（装弹拆弹）；Bukkit 监听器（阶段注册）：等待守卫 + 死亡。
+- 事件订阅（bus）：join / quit / RightClickGameItemEvent（装弹拆弹 / 战斗菜单）；Bukkit 监听器（阶段注册）：等待守卫 + 死亡 + 移动冻结。

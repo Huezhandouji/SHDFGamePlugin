@@ -107,8 +107,10 @@ public class RoleBridge {
         String currentRole = roleAPI.getPlayerRoleId(uuid);
         if(currentRole != null && !currentRole.isEmpty()){
             roleAPI.clearPlayerRole(uuid);
-            releaseRoleRecord(uuid);
         }
+        //无论角色插件当前是否仍记录该角色，都释放本地占用表，
+        //避免死亡/观战等场景下角色插件已清空角色但本地占用表残留导致重新部署失败
+        releaseRoleRecord(uuid);
     }
 
     private void releaseRoleRecord(UUID uuid){

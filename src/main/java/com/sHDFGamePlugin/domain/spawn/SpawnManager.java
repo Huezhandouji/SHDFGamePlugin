@@ -89,7 +89,8 @@ public class SpawnManager {
         return pending != null && pending.remainingTicks <= 0;
     }
 
-    //执行玩家部署: 应用角色，传送，回复状态 然后清除队列中的记录
+    //执行玩家部署: 应用角色，传送，恢复状态 然后清除队列中的记录
+    //注意：角色应用失败时不传送/不改状态，保持 DEPLOYING 等待下个 tick 重试，避免"已传送但无物品"的半部署状态
     public boolean deployPlayer(UUID uuid, String roleId){
         PendingRespawn pending = respawnQueue.get(uuid);
         if(pending == null) return false;
@@ -98,36 +99,36 @@ public class SpawnManager {
         Player player = Bukkit.getPlayer(uuid);
         if(player == null) return false;
 
-        //获取出生点区域
         Sector currentSector = SectorManager.getInstance().getCurrentSector();
         if(currentSector == null) return false;
 
+        World world = Bukkit.getWorld(currentMapConfig.getWorld());
+        if(world == null){
+            GameContext.getInstance().getPlugin().getLogger().warning("[SpawnManager] World in map config not found!");
+            return false;
+        }
+
+        PlayerStatus status = TeamManager.getInstance().getPlayerStatus(uuid);
+        if(status == null) return false;
+
+        //先应用角色：失败则不部署（保持 DEPLOYING），由 PlayingPhase 下个 tick 重试
+        boolean roleApplied = RoleBridge.getInstance().setPlayerRole(uuid, roleId);
+        if(!roleApplied) return false;
+
+        //获取出生点区域
         CubeRegion spawnRegion;
         switch (pending.shdfTeam){
             case ATTACKER -> spawnRegion = currentSector.getAttackerSpawnRegion();
             case DEFENDER -> spawnRegion = currentSector.getDefenderSpawnRegion();
             default -> throw new IllegalArgumentException("Invalid shdfTeam");
         }
-
         Vector spawnPointVector = spawnRegion.randomPoint();
 
         //传送并恢复状态
-        World world = Bukkit.getWorld(currentMapConfig.getWorld());
-        if(world == null){
-            GameContext.getInstance().getPlugin().getLogger().warning("[SpawnManager] World in map config not found!");
-            return false;
-        }
         player.teleport(spawnPointVector.toLocation(world));
         player.setGameMode(GameMode.ADVENTURE);
-
-        PlayerStatus status = TeamManager.getInstance().getPlayerStatus(uuid);
-        if(status == null) return false;
         //部署完成，玩家进入战斗状态
         status.setState(PlayerState.IN_BATTLE);
-
-        //设置角色
-        boolean roleApplied = RoleBridge.getInstance().setPlayerRole(uuid, roleId);
-        if(!roleApplied) return false;
 
         respawnQueue.remove(uuid);
         return true;

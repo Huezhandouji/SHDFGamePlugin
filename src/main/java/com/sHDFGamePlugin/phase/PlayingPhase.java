@@ -48,6 +48,7 @@ import org.bukkit.event.block.BlockBreakEvent;
 import org.bukkit.event.block.BlockPlaceEvent;
 import org.bukkit.event.entity.EntityDamageByEntityEvent;
 import org.bukkit.event.entity.PlayerDeathEvent;
+import org.bukkit.event.player.PlayerMoveEvent;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.ItemMeta;
 import org.bukkit.potion.PotionEffect;
@@ -88,9 +89,10 @@ public class PlayingPhase implements GamePhase {
 
     private static final PlayingPhase INSTANCE = new PlayingPhase();
 
-    //装弹/拆弹 GameItem id（阶段前缀风格）
+    //对局 GameItem id（阶段前缀风格）
     private static final String PLANT_ITEM_ID = "gameItem_playingPhase_plantBomb";
     private static final String DEFUSE_ITEM_ID = "gameItem_playingPhase_defuseBomb";
+    private static final String BATTLE_MENU_ITEM_ID = "gameItem_playingPhase_battleMenu";
 
     private PlayingPhase() {}
 
@@ -122,6 +124,9 @@ public class PlayingPhase implements GamePhase {
     //战斗死亡监听器（仅 PLAYING 期间生效）
     private CombatDeathListener deathListener;
 
+    //装弹/拆弹期间的移动冻结守卫
+    private BombProgressFreezeListener freezeListener;
+
     //死后等待重生的玩家 -> 最近一次播报的秒数（每秒播报去重；开局等待的玩家不在此表）
     private final Map<UUID, Integer> deathCountdownLastSecond = new HashMap<>();
 
@@ -143,13 +148,15 @@ public class PlayingPhase implements GamePhase {
         registerGuard();
         //5. 注册战斗死亡监听器（真实死亡流程）
         registerDeathListener();
+        //5.1 注册装弹/拆弹移动冻结守卫
+        registerFreezeGuard();
         //6. 启动重生倒计时驱动（每 tick 递减队列、播报死亡倒计时、就绪自动部署）
         startRespawnTickTask();
         //7. 订阅事件
         subscribeEvents();
-        //8. 注册装弹/拆弹物品并订阅右键交互
-        registerBombInteractionItems();
-        subscribeBombInteraction();
+        //8. 注册对局物品（装弹/拆弹/战斗菜单）并订阅右键交互
+        registerPlayingItems();
+        subscribeRightClick();
         //9. 启动装弹/拆弹进度驱动与已激活炸弹粒子效果
         startBombProgressTickTask();
         startBombParticleTask();
@@ -158,20 +165,22 @@ public class PlayingPhase implements GamePhase {
     @Override
     public void onExit() {
         unsubscribeEvents();
-        unsubscribeBombInteraction();
+        unsubscribeRightClick();
         stopBombProgressTickTask();
         stopBombParticleTask();
         activeProgresses.clear();
-        unregisterBombInteractionItems();
+        unregisterPlayingItems();
         stopRespawnTickTask();
         unregisterGuard();
         unregisterDeathListener();
+        unregisterFreezeGuard();
         deployFailureLogged.clear();
         deathCountdownLastSecond.clear();
-        //阶段切换清理：关闭所有打开的游戏 GUI，回收快捷栏中的阶段物品（slot 0 / 8）
+        //阶段切换清理：关闭所有打开的游戏 GUI，回收快捷栏中的阶段物品（slot 0 / 7 / 8）
         ChestGui.closeAllGuis();
         for(Player player : Bukkit.getOnlinePlayers()){
             player.getInventory().setItem(0, null);
+            player.getInventory().setItem(7, null);
             player.getInventory().setItem(8, null);
         }
     }
@@ -223,19 +232,17 @@ public class PlayingPhase implements GamePhase {
             PlayerStatus status = teamManager.getPlayerStatus(player.getUniqueId());
             if(status == null) continue;
 
-            //清理上一阶段遗留物品（角色选择物品等）；等待期物品栏保持为空（无任何 GameItem）
-            player.getInventory().clear();
-
             ShdfTeam team = status.getTeam();
             if(team != null && team.isCombatant()){
-                //进入等待重生状态：创造模式隐身 + 不可碰撞
+                //进入等待重生状态：创造隐身 + 清空（保留战斗菜单）+ DEPLOYING + 进重生队列
                 setAwaitingLook(player);
                 //DEPLOYING + 进入重生队列（按地图配置的本方重生时间倒计时）
                 status.setState(PlayerState.DEPLOYING);
                 SpawnManager.getInstance().addPlayer(player.getUniqueId(), team);
             }
             else{
-                //观战者：保持观战模式
+                //观战者：清空背包并保持观战模式
+                player.getInventory().clear();
                 player.setGameMode(GameMode.SPECTATOR);
             }
             //等待部署的玩家与观战者一并传送至旁观者出生点
@@ -245,14 +252,25 @@ public class PlayingPhase implements GamePhase {
         }
     }
 
-    /** 设定"等待重生"表现：创造模式 + 无粒子永久隐身效果 + 不可碰撞 + 空背包（破坏/放置由守卫拦截） */
+    /** 设定"等待重生"表现：创造模式 + 无粒子永久隐身效果 + 不可碰撞 + 清空背包（保留战斗菜单） */
     private void setAwaitingLook(Player player){
-        player.getInventory().clear();
+        //清空背包但保留 slot 8 战斗菜单物品（战斗菜单在等待重生/死亡等状态下不被清除）
+        clearInventoryKeepBattleMenu(player);
+        giveBattleMenuItem(player);
         player.setGameMode(GameMode.CREATIVE);
         //不使用实体隐身标志位：改挂无粒子永久隐身效果（部署/转观战时移除该效果即恢复可见）
         player.addPotionEffect(new PotionEffect(PotionEffectType.INVISIBILITY,
                 Integer.MAX_VALUE, 0, false, false, false));
         player.setCollidable(false);
+    }
+
+    /** 清空玩家背包但保留 slot 8 的战斗菜单物品 */
+    private void clearInventoryKeepBattleMenu(Player player){
+        for(int i = 0; i < player.getInventory().getSize(); i++){
+            if(i != 8){
+                player.getInventory().setItem(i, null);
+            }
+        }
     }
 
     /** 是否处于"等待重生"状态（用于守卫拦截） */
@@ -319,6 +337,7 @@ public class PlayingPhase implements GamePhase {
         player.setHealth(player.getMaxHealth());
         player.setFoodLevel(20);
         giveBombInteractionItem(player, status.getTeam());
+        giveBattleMenuItem(player);
         MessageUtil.sendMessageWithPrefix(player, Component.text("已部署进场, 开始行动!", NamedTextColor.GREEN));
         SoundUtil.playNoticeSuccessCombinedSound(player);
     }
@@ -389,6 +408,9 @@ public class PlayingPhase implements GamePhase {
         if(status.getTeam() == ShdfTeam.ATTACKER){
             TicketManager.getInstance().decreaseTicket(1);
         }
+
+        //死亡释放角色占用，重新部署时再重新应用（避免角色插件已清空角色但本地占用表残留导致重部署失败）
+        RoleBridge.getInstance().clearPlayerRole(victim.getUniqueId());
 
         //原地转为等待重生（创造隐身，不传送）+ DEPLOYING + 进重生队列
         setAwaitingLook(victim);
@@ -525,13 +547,13 @@ public class PlayingPhase implements GamePhase {
         }
         applyRole(player, status);
         giveBombInteractionItem(player, status.getTeam());
+        giveBattleMenuItem(player);
 
         MessageUtil.sendMessageWithPrefix(player, Component.text("欢迎回来, 你仍在对局中", NamedTextColor.GREEN));
     }
 
     /** 恢复"等待重生"身份：维持 DEPLOYING 表现并回旁观者出生点等待；若重生倒计时已结束则立即自动部署 */
     private void restoreAwaitingRespawn(Player player, PlayerStatus status){
-        player.getInventory().clear();
         setAwaitingLook(player);
 
         //与观战者一致：在旁观者出生点等待部署（自动部署时才会传送至本方出生区）
@@ -644,8 +666,8 @@ public class PlayingPhase implements GamePhase {
 
     // ==================== 装弹 / 拆弹（炸弹交互） ====================
 
-    /** 注册进攻方"装弹"物品（TNT 矿车）与防守方"拆弹"物品（剪刀） */
-    private void registerBombInteractionItems(){
+    /** 注册对局物品：装弹（TNT 矿车）、拆弹（剪刀）、战斗菜单（悬挂式橡木告示牌） */
+    private void registerPlayingItems(){
         GameItemRegistry.createAndRegister(PLANT_ITEM_ID, builder ->
                 builder.canDrop(false).canMove(false)
                         .rightClickHandler(event ->
@@ -654,32 +676,89 @@ public class PlayingPhase implements GamePhase {
                 builder.canDrop(false).canMove(false)
                         .rightClickHandler(event ->
                                 GameEventBus.publish(new RightClickGameItemEvent(event.getPlayer(), DEFUSE_ITEM_ID))));
+        GameItemRegistry.createAndRegister(BATTLE_MENU_ITEM_ID, builder ->
+                builder.canDrop(false).canMove(false)
+                        .rightClickHandler(event ->
+                                GameEventBus.publish(new RightClickGameItemEvent(event.getPlayer(), BATTLE_MENU_ITEM_ID))));
     }
 
-    private void unregisterBombInteractionItems(){
+    private void unregisterPlayingItems(){
         GameItemRegistry.unregister(PLANT_ITEM_ID);
         GameItemRegistry.unregister(DEFUSE_ITEM_ID);
+        GameItemRegistry.unregister(BATTLE_MENU_ITEM_ID);
     }
 
-    private void subscribeBombInteraction(){
-        rightClickSubscription = GameEventBus.subscribe(RightClickGameItemEvent.class, this::handleBombInteractionRightClick);
+    private void subscribeRightClick(){
+        rightClickSubscription = GameEventBus.subscribe(RightClickGameItemEvent.class, this::handleRightClickGameItem);
     }
 
-    private void unsubscribeBombInteraction(){
+    private void unsubscribeRightClick(){
         if(rightClickSubscription != null){
             rightClickSubscription.unsubscribe();
             rightClickSubscription = null;
         }
     }
 
-    /** 给参战玩家发放 slot 8 的阵营交互物品：进攻方=装弹（TNT 矿车），防守方=拆弹（剪刀） */
+    /** 装弹/拆弹进行期间冻结玩家位置移动（保留视角转动），进度移除后自动恢复移动 */
+    private class BombProgressFreezeListener implements Listener {
+
+        @EventHandler(ignoreCancelled = true)
+        public void onPlayerMove(PlayerMoveEvent event){
+            UUID uuid = event.getPlayer().getUniqueId();
+            if(!activeProgresses.containsKey(uuid)) return;
+
+            Location from = event.getFrom();
+            Location to = event.getTo();
+            if(to == null) return;
+
+            //仅冻结位置变化（x/y/z），保留 yaw/pitch 视角转动
+            if(from.getX() != to.getX() || from.getY() != to.getY() || from.getZ() != to.getZ()){
+                Location frozen = to.clone();
+                frozen.setX(from.getX());
+                frozen.setY(from.getY());
+                frozen.setZ(from.getZ());
+                event.setTo(frozen);
+            }
+        }
+    }
+
+    private void registerFreezeGuard(){
+        freezeListener = new BombProgressFreezeListener();
+        Bukkit.getPluginManager().registerEvents(freezeListener, GameContext.getInstance().getPlugin());
+    }
+
+    private void unregisterFreezeGuard(){
+        if(freezeListener != null){
+            for(HandlerList handlerList : HandlerList.getHandlerLists()){
+                handlerList.unregister(freezeListener);
+            }
+            freezeListener = null;
+        }
+    }
+
+    /** 给参战玩家发放 slot 7 的阵营交互物品：进攻方=装弹（TNT 矿车），防守方=拆弹（剪刀） */
     private void giveBombInteractionItem(Player player, ShdfTeam team){
         if(team == ShdfTeam.ATTACKER){
-            player.getInventory().setItem(8, createPlantItem());
+            player.getInventory().setItem(7, createPlantItem());
         }
         else if(team == ShdfTeam.DEFENDER){
-            player.getInventory().setItem(8, createDefuseItem());
+            player.getInventory().setItem(7, createDefuseItem());
         }
+    }
+
+    /** 给玩家发放 slot 8 的战斗菜单物品（悬挂式橡木告示牌），在战斗/等待重生等状态下都保留 */
+    private void giveBattleMenuItem(Player player){
+        player.getInventory().setItem(8, createBattleMenuItem());
+    }
+
+    private ItemStack createBattleMenuItem(){
+        ItemStack item = new ItemStack(Material.OAK_HANGING_SIGN);
+        ItemMeta meta = item.getItemMeta();
+        meta.displayName(Component.text("战斗菜单", NamedTextColor.GOLD, TextDecoration.BOLD));
+        meta.lore(List.of(Component.text("右键打开战斗菜单", NamedTextColor.GRAY)));
+        meta = GameItem.applyIdOnItemMeta(BATTLE_MENU_ITEM_ID, meta);
+        item.setItemMeta(meta);
+        return item;
     }
 
     private ItemStack createPlantItem(){
@@ -702,12 +781,19 @@ public class PlayingPhase implements GamePhase {
         return item;
     }
 
-    /** 右键装弹/拆弹物品入口：校验身份后开始对应炸弹的进度 */
-    private void handleBombInteractionRightClick(RightClickGameItemEvent event){
+    /** 右键物品入口：战斗菜单任意状态可用；装弹/拆弹需 IN_BATTLE 参战玩家 */
+    private void handleRightClickGameItem(RightClickGameItemEvent event){
         if(matchEnded) return;
         Player player = event.getPlayer();
         String itemId = event.getGameItemId();
 
+        //战斗菜单：任意状态（等待重生 / 战斗）都可打开
+        if(itemId.equals(BATTLE_MENU_ITEM_ID)){
+            openBattleMenu(player);
+            return;
+        }
+
+        //装弹/拆弹：仅 IN_BATTLE 参战玩家
         PlayerStatus status = TeamManager.getInstance().getPlayerStatus(player.getUniqueId());
         if(status == null || status.getState() != PlayerState.IN_BATTLE || !status.getTeam().isCombatant()) return;
 
@@ -727,11 +813,21 @@ public class PlayingPhase implements GamePhase {
         tryStartBombProgress(player, isPlant);
     }
 
-    /** 尝试开始装弹/拆弹：定位范围内的炸弹并校验其状态，通过则挂起进度 */
+    /** 打开战斗菜单（当前为空实现：打开一个空箱子菜单） */
+    private void openBattleMenu(Player player){
+        ChestGui gui = ChestGui.Builder.create()
+                .title(Component.text("战斗菜单", NamedTextColor.GOLD).decorate(TextDecoration.BOLD))
+                .rows(3)
+                .build();
+        gui.open(player);
+    }
+
+    /** 尝试开始装弹/拆弹：定位范围内的炸弹并校验其状态，通过则挂起进度；已有进度时再次右键 = 取消 */
     private void tryStartBombProgress(Player player, boolean isPlant){
         UUID uuid = player.getUniqueId();
-        //已有进行中的操作：忽略重复右键，避免进度被重置
+        //已有进行中的操作：再次使用对应物品取消操作
         if(activeProgresses.containsKey(uuid)){
+            cancelActiveProgress(player);
             return;
         }
 
@@ -756,6 +852,15 @@ public class PlayingPhase implements GamePhase {
             }
             startBombProgress(player, target.getId(), false, target.getConfig().getDefuseTime());
         }
+    }
+
+    /** 主动取消进行中的装弹/拆弹（再次右键对应物品触发），移除进度后移动冻结自动解除 */
+    private void cancelActiveProgress(Player player){
+        BombProgress existing = activeProgresses.remove(player.getUniqueId());
+        if(existing == null) return;
+        String action = existing.isPlant ? "装弹" : "拆弹";
+        MessageUtil.sendMessageWithPrefix(player, Component.text(action + "已取消", NamedTextColor.GRAY));
+        SoundUtil.playNoticeFailCombinedSound(player);
     }
 
     /** 找到玩家当前所处的炸弹（区域包含玩家位置） */
@@ -817,7 +922,7 @@ public class PlayingPhase implements GamePhase {
         }
     }
 
-    /** 进度是否仍有效：在线参战、阵营匹配、仍在同一炸弹范围、炸弹状态未变、未移动、未受伤 */
+    /** 进度是否仍有效：在线参战、阵营匹配、仍在同一炸弹范围、炸弹状态未变、未受伤（移动由冻结守卫阻止） */
     private boolean isBombProgressValid(Player player, BombProgress progress){
         if(matchEnded) return false;
 
@@ -836,8 +941,6 @@ public class PlayingPhase implements GamePhase {
             if(bomb.getState() != BombState.PLANTED) return false;
         }
 
-        //玩家移动过（超过约 0.25 格）即打断
-        if(player.getLocation().distanceSquared(progress.startLocation) > 0.0625) return false;
         //玩家受伤（生命值下降）即打断
         if(player.getHealth() < progress.startHealth) return false;
         return true;
@@ -925,7 +1028,6 @@ public class PlayingPhase implements GamePhase {
         final int totalTicks;
         int remainingTicks;
         final double startHealth;
-        final Location startLocation;
 
         BombProgress(UUID uuid, String bombId, boolean isPlant, int totalTicks, Player player){
             this.uuid = uuid;
@@ -934,7 +1036,6 @@ public class PlayingPhase implements GamePhase {
             this.totalTicks = totalTicks;
             this.remainingTicks = totalTicks;
             this.startHealth = player.getHealth();
-            this.startLocation = player.getLocation().clone();
         }
     }
 
