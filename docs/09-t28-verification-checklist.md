@@ -10,10 +10,12 @@
    ```powershell
    $p='<file>'
    "sha256=" + (Get-FileHash $p -Algorithm SHA256).Hash
-   "lines="  + [System.IO.File]::ReadAllLines($p).Length
+   "lines="  + [System.IO.File]::ReadAllLines($p).Length   # string[] 元素数 = 行数；字节数需 ReadAllBytes().Length
    "mtime="  + (Get-Item $p).LastWriteTime.ToString('yyyy-MM-dd HH:mm:ss')
    ```
-   ⚠ **口径纪律（team 实测）**：`(Get-Content).Count` 在长行文件上**不可预期地少算（实测 0~39 行）**，一律禁用；`-Raw` 后 `split('\n')` 恒 **+1**；只用 `ReadAllLines`（或数 `0x0A`），并必须附 sha256 锚点。
+   📌 **`ReadAllLines` 返回 `string[]`（数组），`.Length` 就是元素个数＝行数**；**字节数**要用 `[System.IO.File]::ReadAllBytes($p).Length`（例：`SectorProgressController` 244 行 / 15125 字节）。`.Length` 与 `.Count` 在数组上恒等，两种写法都对（本清单统一用 `.Length`）。
+   ⚠ **纪律：比行数/gap 之前先钉 mtime+sha256**——gap 会随修订版变化（`SectorProgressController` 227 版 gap=39、244 版 gap=46），不同时刻的两个数不构成矛盾。
+   ⚠ **口径纪律（team 实测 21:14 当场重测）**：**本工程多数文件存在折行，`(Get-Content).Count` 会少算，故一律以 `ReadAllLines` / 数 `0x0A` 为准、禁用 `(Get-Content).Count`**。实测（ReadAllLines / `0x0A` / `Get-Content`）：`SectorProgressController` 244/244/**198**（gap **46**，`190D6469…`@20:48:46）、`PlayingPhase` 335/335/**307**（gap **28**，`551E98F2…`@20:44:13）、`IntermissionController` 458/458/**433**（gap **25**，`0B2947F6…`@20:35:31）、`SpawnManager` 191/191/191（gap **0**，无折行例外，`F4818A6E…`@20:27:21）；`-Raw` 后 `split('\n')` 恒 **+1**。所有行数引用必须附 sha256 锚点。
    已核对口径一致性示例（2026/9/11 21:0x 实测，ReadAllLines = LF 计数）：`PlayingPhase.java`=335（sha 前16 `551E98F21496BB1B`，20:44:13）、`SectorProgressController.java`=**244**（`190D6469903CDB10`，20:48:46）、`IntermissionController.java`=458（`0B2947F637B0A845`，20:35:31）、`MatchSessionState.java`=216（`3B1875610F3017D6`，20:43:12）、`FinishedPhase.java`=238（`9AAFCA7F2458E0CD`，20:43:43）。
    ⚠ **行号版本纪律**：`SectorProgressController` 早前测得 227/`F9474CE6F43A240E`（20:43:15）是 **t37/t41 之前**的版本；之后为 **244/`190D6469…`（20:48:46，与 t42 审查锚点一致）**。引用行号时必须同时标注 sha256，切勿沿用 227 版本旧行号（例：`endMatch` 在 244 版为 :192，幂等守卫 :194，`setMatchOutcome` :198）。
 3. **跑构建**（绝对路径配方；`$PWD` 字面未展开会回退 `~/.gradle` 并 EXIT 1）：
@@ -98,8 +100,43 @@
 | 全据点攻占 | `sector capture` 逐段打完全部据点（勿用末段 `sector next`）→ 进攻方胜 |
 | 据点超时 | 让据点 `time_limit` 走完（或改小）→ 防守方胜 |
 | 间歇期 | 真实炸弹爆炸清空当前据点 → 间歇期内新据点炸弹不可交互（开始安放/读条两条路径都被挡并给反馈）；时限在开启后才走；间歇期可用"切换角色"，开启后变 BARRIER 且已开菜单刷新为禁用 |
+| **间歇期倒计时标签落点（t27-F1 验收项，必看）** | **`(Ns)` 倒计时标签必须落在「正在开启的那个据点」上**（而不是它后面那个），且**开启瞬间标签不得跳动**。判读方法：盯住 BossBar 中段/侧边栏里带 `(Ns)` 的那一格——间歇期内它应是"已激活未开启"的当前据点；间歇期结束的那一瞬，只应看到 `名称(Ns)` → `名称 + 炸弹三态`，**不应左移/右移一格**。参考实现：`MatchDisplayBridge.java:328-336 segmentOf`（间歇期 `index == currentIndex → OPENING`），:284 `currentIndex = max(sectors.indexOf(current), 0)`，:270-271 注释说明 `openCurrentSector()` 不改 `currentIndex` |
 | 结算 | FINISHED 内聊天栏先展示**胜方与原因**（如「对局结束! 进攻方 获胜 (全部据点已被攻占)」；`/sg debug match end attacker` 走同一条路，原因为「调试指令强制结束」）+ 逐人四维战绩 → 停留 `finish_display_time` 内不被踢 → 清理+踢人 → 回 IDLE；重开一局无残留任务。**注意**：只有胜方确实未被记录（`winner == null`）时才出现中性文案「胜方未记录」，正常结局不应出现 |
 | 空服重开 | 最后一名玩家退出 → 回 IDLE；下一名玩家加入能重新开局（连续 2 轮） |
 | 部署失败日志 | 人为制造失败（如站在非法出生区/未选角色）→ 日志有**可区分原因**+玩家名，且不刷屏（去重） |
 
 **D. 需要记录回传的证据**：`logs/latest.log` 中状态流转行、四类结局的广播/日志行、部署失败日志行、`/sg debug intermission info` 输出、任何异常堆栈。
+
+## 5. 版本钉定（verifier 实测，2026-09-11 21:0x；口径 = ReadAllLines / sha256）
+
+> 用法：引用任何行号前，先在此表比对 sha256；不一致即为**不同修订版**，行号不可沿用。
+
+| 文件 | 行数 | sha256（前 16） | mtime |
+|---|---|---|---|
+| `phase/playing/SectorProgressController.java` | 244 | `190D6469903CDB10` | 20:48:46 |
+| `phase/FinishedPhase.java` | 238 | `9AAFCA7F2458E0CD` | 20:43:43 |
+| `phase/playing/MatchSessionState.java` | 216 | `3B1875610F3017D6` | 20:43:12 |
+| `phase/PlayingPhase.java` | 335 | `551E98F21496BB1B` | 20:44:13 |
+| `phase/playing/IntermissionController.java` | 458 | `0B2947F637B0A845` | 20:35:31 |
+| `phase/playing/PlayingItemFactory.java` | 181 | `73814EDCF6DE1244` | 20:43:49 |
+| `command/DebugCommand.java` | 596 | `72649BA77925B158` | 20:43:05 |
+| `domain/sector/SectorManager.java` | 291 | `F113385BC56D2969` | 20:34:11 |
+| `domain/spawn/SpawnManager.java` | 191 | `F4818A6EB650EEB1` | 20:27:21 |
+| `infrastructure/RoleBridge.java` | 242 | `3AC042AF94760622` | 20:27:40 |
+| `infrastructure/config/ConfigManager.java` | 492 | `C446E65387CBB746` | 20:39:03 |
+| `domain/team/PlayerStatus.java` | 97 | `861F60D088FBAA36` | — |
+| `phase/playing/DeathHandler.java` | 159 | `059C9123F42BB6EC` | 20:39:26 |
+| `phase/playing/BombInteractionController.java` | 340 | `83643218626BF760` | 20:39:31 |
+| **表现层**（t43/t45/t47 落盘后） | | | |
+| `phase/playing/MatchDisplayBridge.java` | 426 | `35419442827ADF5A` | 20:56:13 |
+| `infrastructure/display/BattleSidebarRenderer.java` | 526 | `302584E94AB8D5BE` | 21:09:45 |
+| `infrastructure/display/CompassItemFactory.java` | 286 | `32D3EA6FE40024EE` | 21:06:47 |
+| `infrastructure/display/BattleSectorBarRenderer.java` | 396 | `1942CCA1E4F910C8` | 20:42:41 |
+| `infrastructure/display/BattleDisplayService.java` | 224 | `49A577C3E8B5038D` | 20:25:35 |
+| 资源 `maps.yml` / `config.yml` / `plugin.yml` | 125/49/18 | `B082D303B042B8B4` / `38B73D206221B276` / `23303AF77F304609` | — |
+
+**冻结产物（`--rerun-tasks` 强制重编，两次独立构建同 sha ⇒ 可复现）**
+- `build/libs/SHDFGamePlugin-1.0-SNAPSHOT.jar` = **239506 B / sha256 `A654B12D471F9F1D758FD1FC5BD21C164BE7CCCA029EBE8B779F9836CD6B789E`**
+- 构建：合同命令原样 + `--rerun-tasks` → **EXIT 0**、`BUILD SUCCESSFUL`、`3 actionable tasks: 3 executed`（21:09:50 与 21:12:11 两次同 sha）
+- 时序：jar mtime **晚于**最后源文件（`BattleSidebarRenderer.java` 21:09:45.511）✓
+- ⚠ 旧值作废：`C5666A01…`(20:45) / `4F017DB9…`(20:49:06) / `584EE301…`(20:51:49，均早于 t45/t47 的侧边栏修复) / `0BFD2383…`(21:02:31) / `CB721132…`(21:07:40) / 以及**从未在工作区出现过的** `236910B` 与 `MatchDisplayBridge 397/772808AB…`
