@@ -139,4 +139,5 @@
 - `build/libs/SHDFGamePlugin-1.0-SNAPSHOT.jar` = **239506 B / sha256 `A654B12D471F9F1D758FD1FC5BD21C164BE7CCCA029EBE8B779F9836CD6B789E`**
 - 构建：合同命令原样 + `--rerun-tasks` → **EXIT 0**、`BUILD SUCCESSFUL`、`3 actionable tasks: 3 executed`（21:09:50 与 21:12:11 两次同 sha）
 - 时序：jar mtime **晚于**最后源文件（`BattleSidebarRenderer.java` 21:09:45.511）✓
-- ⚠ 旧值作废：`C5666A01…`(20:45) / `4F017DB9…`(20:49:06) / `584EE301…`(20:51:49，均早于 t45/t47 的侧边栏修复) / `0BFD2383…`(21:02:31) / `CB721132…`(21:07:40) / 以及**从未在工作区出现过的** `236910B` 与 `MatchDisplayBridge 397/772808AB…`
+- ⚠ 旧值作废（见即忽略）：`Bridge 361/5F5FD7E5`、`Bridge 397/772808AB`、`SPC 227/F9474CE6`、`BattleSidebarRenderer 443/096EDD3A`、`514/7FAFE393`、`516/6EC8864C`、`539/47597655`、`CompassItemFactory 277/FAB00F4D`、jar `C5666A01…`/`4F017DB9…`/`584EE301…`/`CB721132…`/`0BFD2383…`/`BEE8A387(239473B)`/`236910B`
+- ✅ 本表与 captain 认证快照（2026-09-11 21:13 复核）逐位一致；产物 `A654B12D…` 已由三方独立 `--rerun-tasks`（21:09:50 / 21:10:25 / 21:12:11）复现。**引用一律以本表为准，不得跨时刻沿用旧值。**
