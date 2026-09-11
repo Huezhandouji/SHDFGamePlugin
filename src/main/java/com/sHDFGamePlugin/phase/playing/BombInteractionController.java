@@ -8,9 +8,13 @@ import com.sHDFGamePlugin.domain.team.PlayerState;
 import com.sHDFGamePlugin.domain.team.PlayerStatus;
 import com.sHDFGamePlugin.domain.team.ShdfTeam;
 import com.sHDFGamePlugin.domain.team.TeamManager;
+import com.sHDFGamePlugin.infrastructure.GameEventBus;
 import com.sHDFGamePlugin.infrastructure.config.ConfigManager;
 import com.sHDFGamePlugin.infrastructure.config.MapConfig;
+import com.sHDFGamePlugin.infrastructure.event.BombExplodedEvent;
+import com.sHDFGamePlugin.infrastructure.regionNotation.CubeRegion;
 import com.sHDFGamePlugin.util.MessageUtil;
+import com.sHDFGamePlugin.util.ParticleUtil;
 import com.sHDFGamePlugin.util.SoundUtil;
 import io.papermc.paper.threadedregions.scheduler.ScheduledTask;
 import net.kyori.adventure.text.Component;
@@ -285,15 +289,39 @@ public final class BombInteractionController {
         }
     }
 
-    // ==================== 已激活炸弹粒子 ====================
+    // ==================== 炸弹区域线框 / 激活粒子 / 爆炸表现 ====================
 
-    /** 每秒为已安放（PLANTED）炸弹的中心点生成一团红色灰尘粒子 */
+    /** 炸弹区域线框 DUST 粒子尺寸（立方体棱边） */
+    private static final float BOMB_OUTLINE_DUST_SIZE = 1.2f;
+    /** 已安放（激活）炸弹的红色云 DUST 粒子尺寸 */
+    private static final float ACTIVATED_DUST_SIZE = 2.2f;
+    /** 每 1 立方格生成的激活粒子数（数量 = clamp(体积 × 本值, 40, 160)） */
+    private static final double ACTIVATED_PER_BLOCK = 0.35d;
+    /** 激活粒子数下限/上限（避免小区域看不清、大区域打爆客户端） */
+    private static final int ACTIVATED_MIN_COUNT = 40;
+    private static final int ACTIVATED_MAX_COUNT = 160;
+
+    /** 爆炸表现的事件订阅（随阶段 onEnter/onExit 成对注册/退订） */
+    private GameEventBus.Subscription bombExplodedSubscription;
+
+    /** 爆炸时额外生成的大团黑烟粒子数量 */
+    private static final int EXPLOSION_SMOKE_COUNT = 36;
+
+    /**
+     * 启动炸弹粒子周期任务（20 tick）并订阅爆炸事件。
+     * <p>
+     * 周期任务负责：① 为当前据点<b>每一颗</b>炸弹画其区域立方体线框（三态配色）；
+     * ② 为已安放炸弹生成覆盖整个区域体积的红色激活云。
+     * 爆炸表现是<b>事件驱动</b>的（订阅 {@link BombExplodedEvent}），不在这里新增每 tick 任务。
+     * </p>
+     */
     public void startBombParticleTask(){
         ScheduledTask task = GameContext.getInstance().getPlugin().getServer().getGlobalRegionScheduler()
                 .runAtFixedRate(GameContext.getInstance().getPlugin(),
                         scheduledTask -> spawnActivatedBombParticles(),
                         1L, 20L);
         MatchSessionState.getInstance().setBombParticleTask(task);
+        subscribeBombExploded();
     }
 
     public void stopBombParticleTask(){
@@ -302,8 +330,33 @@ public final class BombInteractionController {
             bombParticleTask.cancel();
             MatchSessionState.getInstance().setBombParticleTask(null);
         }
+        unsubscribeBombExploded();
     }
 
+    /** 订阅炸弹爆炸事件（幂等：已有订阅时不重复注册） */
+    private void subscribeBombExploded(){
+        if(bombExplodedSubscription != null){
+            return;
+        }
+        bombExplodedSubscription = GameEventBus.subscribe(BombExplodedEvent.class, this::handleBombExplodedVisuals);
+    }
+
+    /** 退订炸弹爆炸事件（幂等、空判） */
+    private void unsubscribeBombExploded(){
+        if(bombExplodedSubscription != null){
+            bombExplodedSubscription.unsubscribe();
+            bombExplodedSubscription = null;
+        }
+    }
+
+    /**
+     * 每 20 tick 的炸弹区域表现：对当前据点<b>全部</b>炸弹画出区域立方体线框，并放大激活炸弹的红色云。
+     * <p>
+     * 线框配色与三态口径一致：UNPLANTED=绿、PLANTED=红、EXPLODED=灰（点更稀，表示区域已失效）。
+     * 线框必须经 {@link ParticleUtil#drawRegionEdges(CubeRegion, World, Particle, double, Object)} 绘制
+     * （带 data 重载，DUST 需要 {@code Particle.DustOptions}）。
+     * </p>
+     */
     private void spawnActivatedBombParticles(){
         if(MatchSessionState.getInstance().isMatchEnded()) return;
         MapConfig mapConfig = ConfigManager.getInstance().getSelectedMapConfig();
@@ -312,10 +365,106 @@ public final class BombInteractionController {
         if(world == null) return;
 
         for(ActiveBomb bomb : SectorManager.getInstance().getActiveBombs()){
-            if(bomb.getState() != BombState.PLANTED) continue;
-            Vector center = bomb.getConfig().getRegion().getCenter();
-            world.spawnParticle(Particle.DUST, center.toLocation(world), 30, 0.4, 0.4, 0.4, 0,
-                    new Particle.DustOptions(Color.RED, 1.5f));
+            CubeRegion region = bomb.getConfig().getRegion();
+            BombState state = bomb.getState();
+
+            //① 区域立方体线框（三态都画；EXPLODED 用更大 step 降低密度，表示"区域已失效"）
+            double step = state == BombState.EXPLODED ? 1.0d : 0.5d;
+            ParticleUtil.drawRegionEdges(region, world, Particle.DUST, step,
+                    new Particle.DustOptions(outlineColor(state), BOMB_OUTLINE_DUST_SIZE));
+
+            //② 红色激活云：只对 PLANTED 炸弹，按区域体积覆盖整个炸弹范围
+            if(state == BombState.PLANTED){
+                spawnActivatedCloud(world, region);
+            }
+        }
+    }
+
+    /**
+     * 已安放炸弹的红色激活云：按区域体积计算数量与偏移，使粒子云覆盖整个炸弹区域。
+     * <p>
+     * 计算式（file: BombInteractionController.spawnActivatedCloud）：
+     * <pre>
+     * volume = |size.x| * |size.y| * |size.z|                    // 区域体积（格）
+     * count  = clamp((int)(volume * ACTIVATED_PER_BLOCK), 40, 160) // 每格 0.35 粒，夹在 [40,160]
+     * offset = (size.x / 2, size.y / 2, size.z / 2)               // 各轴扩散到区域半边长
+     * dust   = DustOptions(Color.RED, 2.2f)                       // 原为 1.5f
+     * </pre>
+     * 对比原实现（固定 30 粒 / 偏移 0.4 / dust 1.5f）：覆盖范围由 0.8 格立方扩到整个炸弹区域，
+     * 数量随体积放大。另补少量 {@link Particle#FLAME} 与 {@link Particle#LARGE_SMOKE} 增强"燃烧"观感。
+     * </p>
+     */
+    private void spawnActivatedCloud(World world, CubeRegion region){
+        Vector size = region.getSize();
+        Vector center = region.getCenter();
+
+        double volume = Math.abs(size.getX()) * Math.abs(size.getY()) * Math.abs(size.getZ());
+        int count = (int) Math.round(volume * ACTIVATED_PER_BLOCK);
+        count = Math.max(ACTIVATED_MIN_COUNT, Math.min(ACTIVATED_MAX_COUNT, count));
+
+        double offsetX = Math.abs(size.getX()) / 2.0d;
+        double offsetY = Math.abs(size.getY()) / 2.0d;
+        double offsetZ = Math.abs(size.getZ()) / 2.0d;
+
+        world.spawnParticle(Particle.DUST, center.getX(), center.getY(), center.getZ(),
+                count, offsetX, offsetY, offsetZ, 0,
+                new Particle.DustOptions(Color.RED, ACTIVATED_DUST_SIZE));
+        //"燃烧"感：少量火焰 + 黑烟（同样按区域体积铺开）
+        world.spawnParticle(Particle.FLAME, center.getX(), center.getY(), center.getZ(),
+                12, offsetX, offsetY, offsetZ, 0);
+        world.spawnParticle(Particle.LARGE_SMOKE, center.getX(), center.getY(), center.getZ(),
+                8, offsetX, offsetY, offsetZ, 0);
+    }
+
+    /** 炸弹区域线框的三态配色：UNPLANTED=绿、PLANTED=红、EXPLODED=灰 */
+    private static Color outlineColor(BombState state){
+        if(state == BombState.PLANTED){
+            return Color.RED;
+        }
+        if(state == BombState.EXPLODED){
+            return Color.GRAY;
+        }
+        return Color.LIME;
+    }
+
+    /**
+     * 炸弹爆炸表现（事件驱动，覆盖真实路径：引信归零与 {@code /sg debug bomb set ... EXPLODED} 都经
+     * {@link GameEventBus#publish(BombExplodedEvent)} 走到这里）。
+     * <p>
+     * 位置 = 该炸弹 {@code BombConfig.getRegion().getCenter()}（世界取自当前地图配置）；
+     * 粒子 = {@link Particle#EXPLOSION_EMITTER} 1 粒强视觉 + {@link Particle#EXPLOSION} 若干带偏移 +
+     * {@link Particle#LARGE_SMOKE} 约 36 粒；音效 = 对<b>所有在线玩家</b>播放
+     * {@link Sound#ENTITY_GENERIC_EXPLODE}（音量 1.8），不只附近玩家。
+     * 本方法不注册任何调度任务。
+     * </p>
+     */
+    private void handleBombExplodedVisuals(BombExplodedEvent event){
+        if(event == null || event.getBomb() == null){
+            return;
+        }
+        MapConfig mapConfig = ConfigManager.getInstance().getSelectedMapConfig();
+        if(mapConfig == null){
+            return;
+        }
+        World world = Bukkit.getWorld(mapConfig.getWorld());
+        if(world == null){
+            return;
+        }
+        Vector center = event.getBomb().getRegion().getCenter();
+        if(center == null){
+            return;
+        }
+
+        Location centerLocation = center.toLocation(world);
+        //强视觉：无偏移的单发爆炸发射器
+        world.spawnParticle(Particle.EXPLOSION_EMITTER, centerLocation, 1, 0, 0, 0, 0);
+        //带偏移的爆炸 + 黑烟，形成一片爆炸云
+        world.spawnParticle(Particle.EXPLOSION, centerLocation, 6, 1.5, 1.0, 1.5, 0);
+        world.spawnParticle(Particle.LARGE_SMOKE, centerLocation, EXPLOSION_SMOKE_COUNT, 2.0, 1.5, 2.0, 0.01);
+
+        //全体在线玩家都能听见（不只附近玩家）
+        for(Player online : Bukkit.getOnlinePlayers()){
+            online.playSound(online.getLocation(), Sound.ENTITY_GENERIC_EXPLODE, 1.8f, 1.0f);
         }
     }
 

@@ -229,7 +229,9 @@ public class FinishedPhase implements GamePhase {
     /** 将所有在线玩家踢出服务器（本阶段未订阅 quit 事件，踢出不触发任何保留逻辑） */
     private void kickAllPlayers(){
         for(Player player : new ArrayList<>(Bukkit.getOnlinePlayers())){
-            player.kick(Component.text("本场对局已结束, 请重新加入开始新对局", NamedTextColor.GREEN, TextDecoration.BOLD));
+            player.kick(Component.text("✔\n", NamedTextColor.GREEN, TextDecoration.BOLD)
+                    .append(Component.text("本场对局已经结束, 插件正在执行清理工作\n", NamedTextColor.GREEN, TextDecoration.BOLD))
+                    .append(Component.text("请重新加入服务器, 来加入新的对局!", NamedTextColor.GREEN, TextDecoration.BOLD)));
         }
     }
 

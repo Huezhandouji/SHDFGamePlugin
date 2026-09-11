@@ -364,7 +364,8 @@ public final class MatchDisplayBridge {
     /** 阵营名：与选角/准备阶段的表述一致（#进攻方SHADOW# / #防守方HUNTER# / #旁观者#） */
     private static Component teamName(ShdfTeam team) {
         if(team == null){
-            return Component.text("未分配", NamedTextColor.DARK_GRAY);
+            //侧边栏去灰：缺省值用 YELLOW，DARK_GRAY 在侧边栏上看不清
+            return Component.text("未分配", NamedTextColor.YELLOW);
         }
         return switch (team){
             case ATTACKER -> Component.text("#进攻方SHADOW#", NamedTextColor.LIGHT_PURPLE, TextDecoration.BOLD);
@@ -380,7 +381,8 @@ public final class MatchDisplayBridge {
      */
     private static Component roleName(String roleId) {
         if(roleId == null || roleId.isEmpty()){
-            return Component.text("未选择角色", NamedTextColor.DARK_GRAY);
+            //侧边栏去灰：缺省值用 YELLOW，与 BattleSidebarRenderer.renderLines 的缺省色一致
+            return Component.text("未选择角色", NamedTextColor.YELLOW);
         }
         try{
             RoleBridge roleBridge = RoleBridge.getInstance();

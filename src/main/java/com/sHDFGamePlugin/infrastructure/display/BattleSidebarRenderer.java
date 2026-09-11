@@ -124,9 +124,10 @@ public final class BattleSidebarRenderer {
         lines.add(new SidebarLine(Component.text("DECAYING FRONTLINE", NamedTextColor.GOLD, TextDecoration.BOLD)));
         lines.add(new SidebarLine(Component.text(intermission ? "区域推进间隔" : "战斗进行中",
                 intermission ? NamedTextColor.YELLOW : NamedTextColor.GREEN)));
-        lines.add(new SidebarLine(Component.text("剩余时间", NamedTextColor.GRAY).append(Component.text("    "))
+        //标签一律用亮色（WHITE）：用户反馈灰色在侧边栏上看不清；数值保留各自强调色
+        lines.add(new SidebarLine(Component.text("剩余时间", NamedTextColor.WHITE).append(Component.text("    "))
                 .append(Component.text(state == null ? "--:--" : state.remainingTimeText(), NamedTextColor.AQUA))));
-        lines.add(new SidebarLine(Component.text("进攻方剩余票数", NamedTextColor.GRAY).append(Component.text("  "))
+        lines.add(new SidebarLine(Component.text("进攻方剩余票数", NamedTextColor.WHITE).append(Component.text("  "))
                 .append(Component.text(String.valueOf(state == null ? 0 : state.attackerTickets()),
                         NamedTextColor.WHITE, TextDecoration.BOLD))));
 
@@ -134,33 +135,34 @@ public final class BattleSidebarRenderer {
             BattleSectorInfo sector = state.activeSector();
             //中段处于"待开启"形态时该据点尚无炸弹明细：进度显示 "-"，避免 0/0 让玩家误读
             String progress = sector.isOpening() ? "-" : sector.progressText();
-            lines.add(new SidebarLine(Component.text("据点 ", NamedTextColor.GRAY)
+            lines.add(new SidebarLine(Component.text("据点 ", NamedTextColor.WHITE)
                     .append(sector.displayName().colorIfAbsent(NamedTextColor.YELLOW))
-                    .append(Component.text(" 进度", NamedTextColor.GRAY))
+                    .append(Component.text(" 进度", NamedTextColor.WHITE))
                     .append(Component.text("    "))
                     .append(Component.text(progress, NamedTextColor.WHITE))));
         }
         else{
-            lines.add(new SidebarLine(Component.text("据点进度", NamedTextColor.GRAY).append(Component.text("    "))
-                    .append(Component.text("--", NamedTextColor.DARK_GRAY))));
+            lines.add(new SidebarLine(Component.text("据点进度", NamedTextColor.WHITE).append(Component.text("    "))
+                    .append(Component.text("--", NamedTextColor.YELLOW))));
         }
 
         if(intermission){
-            lines.add(new SidebarLine(Component.text("下一据点开启", NamedTextColor.GRAY).append(Component.text("  "))
+            lines.add(new SidebarLine(Component.text("下一据点开启", NamedTextColor.WHITE).append(Component.text("  "))
                     .append(Component.text(BattleDisplayState.formatTicks(state.intermissionRemainingTicks()),
                             NamedTextColor.YELLOW, TextDecoration.BOLD))));
         }
 
+        //缺省值用 YELLOW 而不是 DARK_GRAY：灰色在侧边栏上几乎看不清
         Component teamName = view == null || view.teamName() == null
-                ? Component.text("未分配", NamedTextColor.DARK_GRAY)
+                ? Component.text("未分配", NamedTextColor.YELLOW)
                 : view.teamName();
         Component roleName = view == null || view.roleName() == null
-                ? Component.text("未选择角色", NamedTextColor.DARK_GRAY)
+                ? Component.text("未选择角色", NamedTextColor.YELLOW)
                 : view.roleName();
 
-        lines.add(new SidebarLine(Component.text("我方阵营", NamedTextColor.GRAY).append(Component.text("    "))
+        lines.add(new SidebarLine(Component.text("我方阵营", NamedTextColor.WHITE).append(Component.text("    "))
                 .append(teamName)));
-        lines.add(new SidebarLine(Component.text("所持角色", NamedTextColor.GRAY).append(Component.text("    "))
+        lines.add(new SidebarLine(Component.text("所持角色", NamedTextColor.WHITE).append(Component.text("    "))
                 .append(roleName)));
         return lines;
     }
