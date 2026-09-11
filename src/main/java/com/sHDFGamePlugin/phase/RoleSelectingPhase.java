@@ -21,6 +21,7 @@ import com.sHDFGamePlugin.infrastructure.event.RightClickGameItemEvent;
 import com.sHDFGamePlugin.infrastructure.event.ShdfPlayerJoinEvent;
 import com.sHDFGamePlugin.infrastructure.event.ShdfPlayerQuitEvent;
 import com.sHDFGamePlugin.infrastructure.gui.ChestGui;
+import com.sHDFGamePlugin.infrastructure.gui.RoleSelectionGui;
 import com.sHDFGamePlugin.infrastructure.item.GameItem;
 import com.sHDFGamePlugin.infrastructure.item.GameItemRegistry;
 import com.sHDFGamePlugin.util.GameCountdown;
@@ -32,9 +33,7 @@ import net.kyori.adventure.text.format.NamedTextColor;
 import net.kyori.adventure.text.format.TextDecoration;
 import net.kyori.adventure.title.Title;
 import org.bukkit.*;
-import org.bukkit.enchantments.Enchantment;
 import org.bukkit.entity.Player;
-import org.bukkit.inventory.ItemFlag;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.ItemMeta;
 import org.bukkit.scoreboard.Criteria;
@@ -84,6 +83,9 @@ public class RoleSelectingPhase implements GamePhase {
     //已注册的角色按钮（双向表：角色名 <-> 按钮 GameItem id，按阵营分表，点击校验以此为准）
     private final HashBiMap<String, String> registeredAttackerRoleButtonIds = new HashBiMap<>();
     private final HashBiMap<String, String> registeredDefenderRoleButtonIds = new HashBiMap<>();
+
+    //角色选择 GUI 组件（每次进入阶段新建一个，随阶段生命周期废弃；渲染逻辑见 infrastructure/gui/RoleSelectionGui）
+    private RoleSelectionGui roleSelectionGui;
 
     //侧边栏计分板
     private Objective sidebarObjective;
@@ -135,7 +137,8 @@ public class RoleSelectingPhase implements GamePhase {
             giveRoleSelectorItem(player, team);
         }
 
-        //7. 注册选择物品与角色按钮
+        //7. 注册选择物品与角色按钮（GUI 渲染组件按本局重新创建，避免跨局残留回调/内容）
+        createRoleSelectionGui();
         registerRoleSelectorItems();
         registerRoleButtons();
 
@@ -162,8 +165,11 @@ public class RoleSelectingPhase implements GamePhase {
         for(Player player : Bukkit.getOnlinePlayers()){
             player.getInventory().setItem(0, null);
         }
-
-
+        //注销侧边栏计分板目标（对齐 WaitingPhase），防止进入 PLAYING 后残留 role_selecting_phase_sidebar
+        if(sidebarObjective != null){
+            sidebarObjective.unregister();
+            sidebarObjective = null;
+        }
     }
 
     /** 创建一个新的侧边栏计分板 */
@@ -288,9 +294,18 @@ public class RoleSelectingPhase implements GamePhase {
         });
     }
 
+    /**
+     * 创建本局的角色选择 GUI 渲染组件。
+     * <p>
+     * 按钮 GameItem id 前缀沿用阶段命名约定（{@code gameItem_roleSelectingPhase_role_}），
+     * 保证与抽取前注册/反查的 id 完全一致；组件只负责渲染，不持有业务状态。
+     */
+    private void createRoleSelectionGui(){
+        roleSelectionGui = RoleSelectionGui.create(PREFIX + "role_", clearRoleButtonId, true);
+    }
+
     /** 重新注册本局全部角色按钮（含"清除角色"按钮）：先清空两张双向注册表，再按队注册 */
-    private void registerRoleButtons(){
-        //每次进入阶段重新注册，两张表以本次为准
+    private void registerRoleButtons(){        //每次进入阶段重新注册，两张表以本次为准
         registeredAttackerRoleButtonIds.clear();
         registeredDefenderRoleButtonIds.clear();
         registerRoleButtonsForTeam(availableAttackerRoleIds, ShdfTeam.ATTACKER);
@@ -306,16 +321,13 @@ public class RoleSelectingPhase implements GamePhase {
                                 GameEventBus.publish(new InventoryClickGameItemEvent((Player) event.getWhoClicked(), clearRoleButtonId))));
     }
 
-    /** 为单个阵营注册角色按钮：有效角色写入对应双向表（角色名→按钮id）并注册 GameItem；键/值冲突则跳过 */
+    /**
+     * 为单个阵营注册角色按钮：按钮 GameItem id 由 {@link RoleSelectionGui} 统一生成
+     * （保证"菜单里显示用的 id"与"点击回调的 id"同源），有效角色写入对应双向表并注册 GameItem；
+     * 键/值冲突则跳过，与抽取前的注册语义一致。
+     */
     private void registerRoleButtonsForTeam(List<String> roleIds, ShdfTeam team){
         RoleBridge roleBridge = RoleBridge.getInstance();
-        String side;
-        if(team == ShdfTeam.ATTACKER){
-            side = "attacker";
-        }
-        else{
-            side = "defender";
-        }
         //按阵营选择对应的注册表
         HashBiMap<String, String> registeredMap;
         if(team == ShdfTeam.ATTACKER){
@@ -327,7 +339,7 @@ public class RoleSelectingPhase implements GamePhase {
         for(String roleId : roleIds){
             //只注册已实现（有效）的角色
             if(!roleBridge.isValidRoleId(roleId)) continue;
-            String gameItemId = PREFIX + "role_" + side + "_" + roleId;
+            String gameItemId = roleSelectionGui.generateRoleButtonGameItemId(team, roleId);
             //记录: 角色名 -> 按钮 id；put 失败说明键/值冲突，跳过本次注册
             if(!registeredMap.put(roleId, gameItemId)){
                 GameContext.getInstance().getPlugin().getLogger().warning("[RoleSelectingPhase] 注册角色按钮冲突, 跳过: " + roleId + " -> " + gameItemId);
@@ -492,97 +504,32 @@ public class RoleSelectingPhase implements GamePhase {
         selectRole(event.getPlayer(), roleId);
     }
 
-    /** 打开玩家的角色选择箱子 GUI：前面放本队有效角色按钮，最下面一行中间放"清除角色"按钮（箱子菜单上限 6 行） */
+    /**
+     * 打开玩家的角色选择箱子 GUI：前面放本队有效角色按钮，最下面一行中间放"清除角色"按钮（箱子菜单上限 6 行）。
+     * 布局与按钮渲染由 {@link RoleSelectionGui} 统一负责（与刷新逻辑同源）。
+     */
     private void openRoleSelectionGui(Player player){
         TeamManager teamManager = TeamManager.getInstance();
         ShdfTeam team = teamManager.getTeam(player.getUniqueId());
         if(team == null || !team.isCombatant()) return;
 
-        List<String> roleIds;
-        if(team == ShdfTeam.ATTACKER){
-            roleIds = availableAttackerRoleIds;
-        }
-        else{
-            roleIds = availableDefenderRoleIds;
-        }
-        //只展示有效（已实现）角色，与注册逻辑一致
-        RoleBridge roleBridge = RoleBridge.getInstance();
-        List<String> validRoleIds = roleIds.stream().filter(roleBridge::isValidRoleId).toList();
-
-        String sideName;
-        if(team == ShdfTeam.ATTACKER){
-            sideName = "进攻方";
-        }
-        else{
-            sideName = "防守方";
-        }
-
-        //行数 = 角色所需行数 + 底部保留 1 行放清除按钮；上限 6 行（MC 箱子菜单上限）
-        int roleRows = Math.max(1, (validRoleIds.size() + 8) / 9);
-        int rows = Math.min(6, roleRows + 1);
-        //清除按钮位于最下面一行中间，不与角色按钮冲突
-        int clearSlot = (rows - 1) * 9 + 4;
-
-        ChestGui.Builder builder = ChestGui.Builder.create()
-                .title(Component.text("选择角色 - " + sideName,
-                        NamedTextColor.YELLOW).decorate(TextDecoration.BOLD))
-                .rows(rows);
-
-        int slot = 0;
-        for(String roleId : validRoleIds){
-            builder.setSlot(slot++, buildRoleButton(roleId, team));
-        }
-        //最下面一行中间：清除自己角色的按钮
-        builder.setSlot(clearSlot, buildClearRoleButton());
-        builder.build().open(player);
+        roleSelectionGui.openMenu(player, team, getRolePool(team), getSideDisplayName(team));
     }
 
-    /** 构建单个角色按钮物品：名称=DisplayName（空回退 roleId），Lore=已选该角色的玩家名单，有人选择时加附魔光效 */
-    private ItemStack buildRoleButton(String roleId, ShdfTeam team){
-        RoleBridge roleBridge = RoleBridge.getInstance();
-
-        //RoleAPI 对不存在的角色返回 Material.AIR 而非 null，AIR 同样视为缺失
-        Material icon = roleBridge.getRoleIcon(roleId);
-        if(icon == null || icon == Material.AIR){
-            icon = Material.PAPER;
-        }
-
-        ItemStack button = new ItemStack(icon);
-        ItemMeta meta = button.getItemMeta();
-
-        //名称：角色的 DisplayName（缺失回退 roleId）
-        Component displayName = roleBridge.getRoleDisplayName(roleId);
-        if(displayName == null || displayName.equals(Component.empty())){
-            displayName = Component.text(roleId, NamedTextColor.WHITE);
-        }
-        meta.displayName(displayName);
-
-        //Lore：已选择该角色的玩家名单；有人选择时附加魔光效
-        List<String> selectors = getRoleSelectors(team, roleId);
-        List<Component> lore = new ArrayList<>();
-        if(selectors.isEmpty()){
-            lore.add(Component.text("尚未有人选择", NamedTextColor.GRAY));
-        }
-        else{
-            for(String name : selectors){
-                lore.add(Component.text("- " + name, NamedTextColor.GREEN));
-            }
-            //附魔光效（隐藏附魔描述）
-            meta.addEnchant(Enchantment.UNBREAKING, 1, true);
-            meta.addItemFlags(ItemFlag.HIDE_ENCHANTS);
-        }
-        meta.lore(lore);
-
-        String side;
+    /** 本队角色池（进攻方 / 防守方） */
+    private List<String> getRolePool(ShdfTeam team){
         if(team == ShdfTeam.ATTACKER){
-            side = "attacker";
+            return availableAttackerRoleIds;
         }
-        else{
-            side = "defender";
+        return availableDefenderRoleIds;
+    }
+
+    /** 阵营显示名（菜单标题用） */
+    private String getSideDisplayName(ShdfTeam team){
+        if(team == ShdfTeam.ATTACKER){
+            return "进攻方";
         }
-        meta = GameItem.applyIdOnItemMeta(PREFIX + "role_" + side + "_" + roleId, meta);
-        button.setItemMeta(meta);
-        return button;
+        return "防守方";
     }
 
     /** 查询本队中已选择指定角色的在线玩家名单（以 PlayerStatus.selectedRoleId 为准） */
@@ -597,17 +544,6 @@ public class RoleSelectingPhase implements GamePhase {
             }
         }
         return names;
-    }
-
-    /** 构建"清除已选角色"按钮（放置于第 7 行中间） */
-    private ItemStack buildClearRoleButton(){
-        ItemStack button = new ItemStack(Material.BARRIER);
-        ItemMeta meta = button.getItemMeta();
-        meta.displayName(Component.text("清除已选角色", NamedTextColor.RED, TextDecoration.BOLD));
-        meta.lore(List.of(Component.text("点击清除自己当前选择的角色", NamedTextColor.GRAY)));
-        meta = GameItem.applyIdOnItemMeta(clearRoleButtonId, meta);
-        button.setItemMeta(meta);
-        return button;
     }
 
     /** 清除玩家自己已选的角色：仅清空 selectedRoleId 记录（选角阶段不应用角色），播放失败音效并刷新菜单 */
@@ -684,20 +620,8 @@ public class RoleSelectingPhase implements GamePhase {
             ShdfTeam team = TeamManager.getInstance().getTeam(player.getUniqueId());
             if(team == null || !team.isCombatant()) continue;
 
-            List<String> roleIds;
-            if(team == ShdfTeam.ATTACKER){
-                roleIds = availableAttackerRoleIds;
-            }
-            else{
-                roleIds = availableDefenderRoleIds;
-            }
             //只重建有效角色按钮（与打开 GUI 时一致），槽位数量不变，不会出现空槽
-            RoleBridge roleBridge = RoleBridge.getInstance();
-            int slot = 0;
-            for(String roleId : roleIds){
-                if(!roleBridge.isValidRoleId(roleId)) continue;
-                gui.setSlot(slot++, buildRoleButton(roleId, team));
-            }
+            roleSelectionGui.applyContent(gui, team, getRolePool(team));
         }
     }
 
@@ -728,6 +652,8 @@ public class RoleSelectingPhase implements GamePhase {
         player.getInventory().clear();
         giveRoleSelectorItem(player, status.getTeam());
         player.setGameMode(GameMode.ADVENTURE);
+        //恢复插件持有的计分板实例：断线重连后必须重新挂上，否则看不到选角侧边栏
+        player.setScoreboard(SHDFGamePlugin.getInstance().getTempScoreboard());
 
         ConfigManager config = ConfigManager.getInstance();
         World world = Bukkit.getWorld(config.getRoleSelectionWorld());
@@ -769,6 +695,8 @@ public class RoleSelectingPhase implements GamePhase {
         teamManager.removePlayer(uuid);
         teamManager.addPlayer(uuid, ShdfTeam.SPECTATOR, PlayerState.ROLE_SELECTING);
 
+        //观战者也要用插件持有的计分板实例，否则侧边栏对它不可见
+        player.setScoreboard(SHDFGamePlugin.getInstance().getTempScoreboard());
         MessageUtil.sendMessageWithPrefix(player, Component.text("你在对局中加入, 已经被自动设置为旁观者, 请等待对局结束"));
         player.getInventory().clear();
         player.setGameMode(GameMode.SPECTATOR);
@@ -776,9 +704,11 @@ public class RoleSelectingPhase implements GamePhase {
 
     /** 退出事件入口：空服则回 IDLE；否则立即清除其已选角色（重连需重新选择），保留 PlayerStatus（断线保护）并挂超时清理 */
     private void handlePlayerQuit(ShdfPlayerQuitEvent event){
-        UUID uuid = event.getPlayer().getUniqueId();
+        Player quittingPlayer = event.getPlayer();
+        UUID uuid = quittingPlayer.getUniqueId();
 
-        if(Bukkit.getOnlinePlayers().isEmpty()){
+        //空服判定：除退出者外没有其他玩家在线（与 PlayingPhase 口径一致）
+        if(isNoOtherPlayerOnline(quittingPlayer)){
             GameStateMachine.getInstance().transitionTo(GameState.IDLE);
             return;
         }
@@ -801,6 +731,23 @@ public class RoleSelectingPhase implements GamePhase {
                     RoleBridge.getInstance().clearPlayerRole(expiredUuid);
                 }
         );
+    }
+
+    /**
+     * 除退出者本人之外是否还有其他玩家在线（空服判定口径，与 WaitingPhase 保持同一写法）。
+     * <p>
+     * PlayerQuitEvent 在玩家被移出在线列表之前触发，因此退出者仍在 {@code Bukkit.getOnlinePlayers()} 中；
+     * 原 {@code isEmpty()} 判定在最后一名玩家退出时会误判为仍有玩家在线，导致状态机卡在 WAITING/ROLE_SELECTING
+     * 无法重开。这里按 uuid 显式排除退出者，修复该判定。
+     */
+    private boolean isNoOtherPlayerOnline(Player quittingPlayer){
+        if(quittingPlayer == null) return false;
+        for(Player onlinePlayer : Bukkit.getOnlinePlayers()){
+            if(!onlinePlayer.getUniqueId().equals(quittingPlayer.getUniqueId())){
+                return false;
+            }
+        }
+        return true;
     }
 
     // ==================== 事件订阅 ====================

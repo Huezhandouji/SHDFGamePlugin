@@ -30,6 +30,9 @@ public class RoleBridge {
     private Map<UUID, String> attackerPlayerRoleMap = new HashMap<UUID, String>();
     private Map<UUID, String> defenderPlayerRoleMap = new HashMap<UUID, String>();
 
+    //角色应用失败原因去重记录：玩家 uuid -> 最近一次已记录的原因（同一玩家同一原因只记一次，避免部署重试刷屏）
+    private final Map<UUID, String> roleFailureReasonLogged = new HashMap<>();
+
     private RoleBridge() {}
 
     public static RoleBridge getInstance() {
@@ -78,6 +81,7 @@ public class RoleBridge {
 
         attackerPlayerRoleMap.clear();
         defenderPlayerRoleMap.clear();
+        roleFailureReasonLogged.clear();
     }
 
     public List<Player> getAllRoledAttackerPlayers(){
@@ -116,27 +120,37 @@ public class RoleBridge {
     private void releaseRoleRecord(UUID uuid){
         attackerPlayerRoleMap.remove(uuid);
         defenderPlayerRoleMap.remove(uuid);
+        roleFailureReasonLogged.remove(uuid);
     }
 
     public boolean setPlayerRole(UUID uuid, String roleId){
         //参数有问题，不是战斗人员拒绝设置角色
         Player player = Bukkit.getPlayer(uuid);
-        if(player == null || roleId == null || roleId.isEmpty()) return false;
+        if(player == null){
+            return failRole(uuid, roleId, "玩家不在线");
+        }
+        if(roleId == null || roleId.isEmpty()){
+            return failRole(uuid, roleId, "未选择角色(selectedRoleId 为空)");
+        }
         ShdfTeam shdfTeam = TeamManager.getInstance().getTeam(uuid);
-        if(!shdfTeam.isParticipant()) return false;
+        if(!shdfTeam.isParticipant()){
+            return failRole(uuid, roleId, "阵营非参战方: " + shdfTeam);
+        }
 
         //检查所属阵营角色池，如果角色池里面没有将要设置的角色，拒绝设置
-        if (currentMapConfig == null) return false;
+        if (currentMapConfig == null) {
+            return failRole(uuid, roleId, "未设置当前地图配置(角色池来源缺失)");
+        }
         List<String> rolePool;
         switch (shdfTeam){
             case ATTACKER -> rolePool = currentMapConfig.getAttackerRoles();
             case DEFENDER -> rolePool = currentMapConfig.getDefenderRoles();
             default -> {
-                return false;
+                return failRole(uuid, roleId, "阵营无角色池: " + shdfTeam);
             }
         }
         if (!rolePool.contains(roleId)) {
-            return false;
+            return failRole(uuid, roleId, "角色不在本方角色池: " + roleId);
         }
 
         //根据阵营获取对应的角色记录
@@ -145,7 +159,7 @@ public class RoleBridge {
             case ATTACKER -> occupiedRoles = attackerPlayerRoleMap.values();
             case DEFENDER -> occupiedRoles = defenderPlayerRoleMap.values();
             default -> {
-                return false;
+                return failRole(uuid, roleId, "阵营无角色占用表: " + shdfTeam);
             }
         }
 
@@ -154,24 +168,43 @@ public class RoleBridge {
             String currentRole = roleAPI.getPlayerRoleId(uuid);
             //如果记录中有使用该角色的玩家并且自己当前角色不是这个角色，拒绝设置角色
             if(occupiedRoles.contains(roleId) && (currentRole == null || !currentRole.equals(roleId))){
-                return false;
+                return failRole(uuid, roleId, "角色已被同队玩家占用(当前不允许重复角色)");
             }
         }
 
         //设置角色
         boolean success = roleAPI.setPlayerRole(uuid, roleId);
         if(!success){
-            return false;
+            return failRole(uuid, roleId, "RoleAPI.setPlayerRole 返回 false");
         }
         switch (shdfTeam){
             case ATTACKER -> attackerPlayerRoleMap.put(uuid, roleId);
             case DEFENDER -> defenderPlayerRoleMap.put(uuid, roleId);
             default -> {
-                return false;
+                return failRole(uuid, roleId, "阵营无角色记录表: " + shdfTeam);
             }
         }
 
+        roleFailureReasonLogged.remove(uuid);
         return true;
+    }
+
+    /**
+     * 记录角色应用失败原因（含玩家名与 uuid）并返回 false。
+     * <p>
+     * 同一玩家同一原因只记一次：部署失败会被每 tick 重试，逐 tick 打日志会刷屏；
+     * 原因变化或设置成功后清除记录，因此仍能定位新问题。
+     */
+    private boolean failRole(UUID uuid, String roleId, String reason){
+        if(!reason.equals(roleFailureReasonLogged.get(uuid))){
+            roleFailureReasonLogged.put(uuid, reason);
+
+            Player player = Bukkit.getPlayer(uuid);
+            String playerName = player != null ? player.getName() : "unknown";
+            Bukkit.getLogger().warning("[RoleBridge] 玩家 " + playerName + " (" + uuid
+                    + ") 角色应用失败: roleId=" + roleId + " 原因=" + reason);
+        }
+        return false;
     }
 
     //获取玩家角色

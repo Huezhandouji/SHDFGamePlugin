@@ -12,6 +12,7 @@ import org.bukkit.util.Vector;
 
 import java.io.File;
 import java.util.*;
+import java.util.logging.Logger;
 
 /**
  * 配置管理（单例）：加载 config.yml（全局设置）与 maps.yml（地图/据点/炸弹配置）。
@@ -21,6 +22,12 @@ import java.util.*;
 public class ConfigManager {
 
     private static final ConfigManager INSTANCE = new ConfigManager();
+
+    /** 结算阶段战绩展示停留时长默认值（tick，200 = 10 秒），缺键/负值/读取失败时使用 */
+    public static final int DEFAULT_FINISH_DISPLAY_TIME = 200;
+
+    /** 配置读取告警日志（不依赖插件实例是否已 init） */
+    private static final Logger LOGGER = Logger.getLogger(ConfigManager.class.getName());
 
     private FileConfiguration mainConfig;
     private FileConfiguration mapConfigFile;
@@ -212,6 +219,31 @@ public class ConfigManager {
         return mainConfig.getInt("playing.reconnect_time_limit", 1200);
     }
 
+    /**
+     * 结算阶段（FINISHED）战绩展示停留时长（tick）。
+     * <p>
+     * 缺键回退默认 {@value #DEFAULT_FINISH_DISPLAY_TIME}；非法值（负值）与缺键同样回退默认并打印 warning，
+     * 不抛异常（沿用本工程"sector_advance_interval 缺键/负值 → warning + 回退"的既有风格）。
+     */
+    public int getFinishDisplayTime(){
+        int raw;
+        try{
+            raw = mainConfig.getInt("playing.finish_display_time", DEFAULT_FINISH_DISPLAY_TIME);
+        }
+        catch (Exception exception){
+            //配置被写成非数字等异常类型时不抛给调用方，回退默认值
+            LOGGER.warning("[ConfigManager] playing.finish_display_time 读取失败, 回退默认 "
+                    + DEFAULT_FINISH_DISPLAY_TIME + " tick: " + exception);
+            return DEFAULT_FINISH_DISPLAY_TIME;
+        }
+        if(raw < 0){
+            LOGGER.warning("[ConfigManager] playing.finish_display_time 为负值(" + raw + "), 回退默认 "
+                    + DEFAULT_FINISH_DISPLAY_TIME + " tick");
+            return DEFAULT_FINISH_DISPLAY_TIME;
+        }
+        return raw;
+    }
+
     /** 角色选择阶段所在世界 */
     public String getRoleSelectionWorld(){
         return mainConfig.getString("role_selection.world", "world");
@@ -301,6 +333,7 @@ public class ConfigManager {
         if(attackerRespawnTime < 0 || defenderRespawnTime < 0){
             throw new IllegalStateException("Attacker respawn time or defender respawn time cannot be negative!");
         }
+        int sectorAdvanceInterval = parseSectorAdvanceInterval(mapId, mapSection);
         String world =  mapSection.getString("world", "overworld");
         Vector spectatorSpawnpoint = parseVector(mapSection.getConfigurationSection("spectator_spawnpoint"));
 
@@ -312,9 +345,31 @@ public class ConfigManager {
 
         mapConfigs.put(mapId, new MapConfig(
                 mapId, name, description, icon, maxTickets, initialTickets,
-                attackerRespawnTime, defenderRespawnTime,
+                attackerRespawnTime, defenderRespawnTime, sectorAdvanceInterval,
                 world, spectatorSpawnpoint, attackerRoles, defenderRoles, sectors
         ));
+    }
+
+    /**
+     * 解析地图级"区域推进间隔"（{@code sector_advance_interval}，单位 tick）：
+     * 当前区域被攻占 → 下一个区域正式开启的间歇期。
+     * <p>
+     * 缺键（服务器端 maps.yml 未同步新键）<b>不抛异常</b>：回退默认 0（= 攻占后立即开启，
+     * 等同旧行为）并给出 warning，避免整张地图被 loadMapConfigs 当作损坏配置跳过；负值同样按 0 处理并 warning。
+     */
+    private int parseSectorAdvanceInterval(String mapId, ConfigurationSection mapSection){
+        if(!mapSection.contains("sector_advance_interval")){
+            plugin.getLogger().warning("Map '" + mapId + "' missing 'sector_advance_interval', fallback to 0 "
+                    + "(据点攻占后立即开启下一个据点)。请在服务器端 maps.yml 中补上该键。");
+            return 0;
+        }
+        int interval = mapSection.getInt("sector_advance_interval", 0);
+        if(interval < 0){
+            plugin.getLogger().warning("Map '" + mapId + "' has negative 'sector_advance_interval' (" + interval
+                    + "), fallback to 0 (无间歇期)。");
+            return 0;
+        }
+        return interval;
     }
 
     private Map<String, List<String>> loadRoles(ConfigurationSection mapSection){

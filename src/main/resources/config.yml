@@ -40,6 +40,9 @@ playing:
   allow_duplicate_roles: false
   # 断线重连保护时长（tick）：玩家退出后保留状态，超时仍未重连才清除
   reconnect_time_limit: 1200
+  # 结算阶段战绩展示停留时长（tick），200 = 10 秒；缺键或负值回退默认 200
+  # 注意：本键不会自动同步到服务器已有配置，需手动覆盖 plugins/SHDFGamePlugin/config.yml
+  finish_display_time: 200
 
 # ====== 可用地图列表 ======
 maps:

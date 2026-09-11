@@ -11,6 +11,7 @@ maps:
     initial_tickets: 100
     attacker_respawn_time: 100      # 进攻方死亡后重生等待时间（tick）
     defender_respawn_time: 80       # 防守方死亡后重生等待时间（tick）
+    sector_advance_interval: 600    # 当前区域被攻占 → 下一个区域正式开启的间歇期（tick）；0 = 无间歇期（攻占后立即开启）
     world: "world"
     spectator_spawnpoint: { x: 0.0, y: 80.0, z: 200.0 }   # 观战者出生点
 

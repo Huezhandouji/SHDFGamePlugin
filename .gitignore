@@ -31,3 +31,6 @@ Thumbs.db
 *.bak
 *.swp
 local.properties
+# 工作区内 Gradle home（沙箱环境下的离线构建配方）
+.gradle-work/
+.agent-teams/

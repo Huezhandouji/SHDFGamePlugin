@@ -20,6 +20,8 @@ public class MapConfig {
     private final int initialTickets;
     private final int attackerRespawnTime;
     private final int defenderRespawnTime;
+    /** 区域推进间隔（tick）：当前区域被攻占 → 下一个区域正式开启的间歇期；0 = 无间歇期 */
+    private final int sectorAdvanceInterval;
     private final String world;
     private final Vector spectatorSpawnpoint;
     private final List<String> attackerRoles;
@@ -29,7 +31,7 @@ public class MapConfig {
 
     public MapConfig(String id, String name, String description,
                      String icon, int maxTickets, int initialTickets,
-                     int attackerRespawnTime, int defenderRespawnTime,
+                     int attackerRespawnTime, int defenderRespawnTime, int sectorAdvanceInterval,
                      String world, Vector spectatorSpawnpoint,
                      List<String> attackerRoles, List<String> defenderRoles,
                      List<Sector> sectors) {
@@ -42,6 +44,7 @@ public class MapConfig {
         this.initialTickets = initialTickets;
         this.attackerRespawnTime = attackerRespawnTime;
         this.defenderRespawnTime = defenderRespawnTime;
+        this.sectorAdvanceInterval = sectorAdvanceInterval;
         this.world = world;
         this.spectatorSpawnpoint = spectatorSpawnpoint;
         this.attackerRoles = attackerRoles;
@@ -81,6 +84,11 @@ public class MapConfig {
 
     public int getDefenderRespawnTime() {
         return defenderRespawnTime;
+    }
+
+    /** 区域推进间隔（tick）：当前区域被攻占 → 下一个区域正式开启的间歇期；0 = 无间歇期（立即开启） */
+    public int getSectorAdvanceInterval() {
+        return sectorAdvanceInterval;
     }
 
     public String getWorld() {

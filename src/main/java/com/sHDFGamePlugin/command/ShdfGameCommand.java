@@ -21,6 +21,7 @@ public class ShdfGameCommand implements CommandExecutor, TabCompleter {
 
     public ShdfGameCommand() {
         registerSubCommand(new ConfigCommand());
+        registerSubCommand(new DebugCommand());
     }
 
     private void registerSubCommand(SubCommand subCommand) {

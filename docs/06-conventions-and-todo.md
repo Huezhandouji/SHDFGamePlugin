@@ -84,3 +84,4 @@
 - 源码总览与模块地图见 `README.md`
 - 各模块文档：`docs/01-overview.md` ~ `docs/06-conventions-and-todo.md`
 - PLAYING 现状与后续（交接参考）：`docs/07-playingphase-status.md`
+- PLAYING 阶段模块地图（t19 拆分，后续任务的边界约定）：`docs/08-playing-modules.md`

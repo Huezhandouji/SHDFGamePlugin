@@ -32,6 +32,9 @@ public class SpawnManager {
     //重生队列
     private final Map<UUID, PendingRespawn> respawnQueue = new HashMap<>();
 
+    //部署失败原因去重记录：玩家 uuid -> 最近一次已记录的原因（同一玩家同一原因只记一次，避免每 tick 重试刷屏）
+    private final Map<UUID, String> deployFailureReasonLogged = new HashMap<>();
+
     private MapConfig currentMapConfig;
 
     private SpawnManager() {}
@@ -65,10 +68,12 @@ public class SpawnManager {
 
     public void removePlayer(UUID uuid) {
         respawnQueue.remove(uuid);
+        deployFailureReasonLogged.remove(uuid);
     }
 
     public void clearAll() {
         respawnQueue.clear();
+        deployFailureReasonLogged.clear();
     }
 
     public void update(){
@@ -93,27 +98,46 @@ public class SpawnManager {
     //注意：角色应用失败时不传送/不改状态，保持 DEPLOYING 等待下个 tick 重试，避免"已传送但无物品"的半部署状态
     public boolean deployPlayer(UUID uuid, String roleId){
         PendingRespawn pending = respawnQueue.get(uuid);
-        if(pending == null) return false;
-        if(!canRespawn(uuid)) return false;
+        if(pending == null){
+            logDeployFailure(uuid, "不在重生队列中(未加入队列或已被移除)");
+            return false;
+        }
+        if(!canRespawn(uuid)){
+            logDeployFailure(uuid, "重生倒计时未结束");
+            return false;
+        }
 
         Player player = Bukkit.getPlayer(uuid);
-        if(player == null) return false;
+        if(player == null){
+            logDeployFailure(uuid, "玩家不在线");
+            return false;
+        }
 
         Sector currentSector = SectorManager.getInstance().getCurrentSector();
-        if(currentSector == null) return false;
+        if(currentSector == null){
+            logDeployFailure(uuid, "当前据点为 null(据点未加载或已全部攻占)");
+            return false;
+        }
 
         World world = Bukkit.getWorld(currentMapConfig.getWorld());
         if(world == null){
-            GameContext.getInstance().getPlugin().getLogger().warning("[SpawnManager] World in map config not found!");
+            logDeployFailure(uuid, "地图世界不存在: " + currentMapConfig.getWorld());
             return false;
         }
 
         PlayerStatus status = TeamManager.getInstance().getPlayerStatus(uuid);
-        if(status == null) return false;
+        if(status == null){
+            logDeployFailure(uuid, "缺少 PlayerStatus(玩家不在队伍/状态已过期)");
+            return false;
+        }
 
         //先应用角色：失败则不部署（保持 DEPLOYING），由 PlayingPhase 下个 tick 重试
+        //（RoleBridge.setPlayerRole 内部对每个失败分支另有可区分原因日志）
         boolean roleApplied = RoleBridge.getInstance().setPlayerRole(uuid, roleId);
-        if(!roleApplied) return false;
+        if(!roleApplied){
+            logDeployFailure(uuid, "角色应用失败: roleId=" + roleId);
+            return false;
+        }
 
         //获取出生点区域
         CubeRegion spawnRegion;
@@ -131,7 +155,24 @@ public class SpawnManager {
         status.setState(PlayerState.IN_BATTLE);
 
         respawnQueue.remove(uuid);
+        deployFailureReasonLogged.remove(uuid);
         return true;
+    }
+
+    /**
+     * 记录部署失败原因（含玩家名与 uuid）。
+     * <p>
+     * 同一玩家同一原因只记一次：部署失败会由 PlayingPhase 每 tick 重试，逐 tick 打日志会把最新日志刷没；
+     * 原因变化（例如从"角色应用失败"变成"玩家不在线"）或部署成功后清除记录，因此仍能定位新问题。
+     */
+    private void logDeployFailure(UUID uuid, String reason){
+        if(reason.equals(deployFailureReasonLogged.get(uuid))) return;
+        deployFailureReasonLogged.put(uuid, reason);
+
+        Player player = Bukkit.getPlayer(uuid);
+        String playerName = player != null ? player.getName() : "unknown";
+        GameContext.getInstance().getPlugin().getLogger().warning(
+                "[SpawnManager] 玩家 " + playerName + " (" + uuid + ") 部署失败: " + reason);
     }
 
 

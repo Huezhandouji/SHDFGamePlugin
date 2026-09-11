@@ -364,13 +364,31 @@ public class WaitingPhase implements GamePhase {
         SpawnManager.getInstance().removePlayer(player.getUniqueId());
         RoleBridge.getInstance().clearPlayerRole(player.getUniqueId());
 
-        if(Bukkit.getOnlinePlayers().isEmpty()){
+        //空服判定：除退出者外没有其他玩家在线（与 PlayingPhase 口径一致），回 IDLE 由下一局的加入事件重新开局
+        if(isNoOtherPlayerOnline(player)){
             GameStateMachine.getInstance().transitionTo(GameState.IDLE);
             return;
         }
 
         updateSidebarObjective();
         checkStartConditions();
+    }
+
+    /**
+     * 除退出者本人之外是否还有其他玩家在线（空服判定口径）。
+     * <p>
+     * PlayerQuitEvent 在玩家被移出在线列表之前触发，因此退出者仍在 {@code Bukkit.getOnlinePlayers()} 中；
+     * 原 {@code isEmpty()} 判定在最后一名玩家退出时会误判为仍有玩家在线，导致状态机卡在 WAITING/ROLE_SELECTING
+     * 无法重开。这里按 uuid 显式排除退出者，修复该判定。
+     */
+    private boolean isNoOtherPlayerOnline(Player quittingPlayer){
+        if(quittingPlayer == null) return false;
+        for(Player onlinePlayer : Bukkit.getOnlinePlayers()){
+            if(!onlinePlayer.getUniqueId().equals(quittingPlayer.getUniqueId())){
+                return false;
+            }
+        }
+        return true;
     }
 
     private void registerPlayer(Player player){
