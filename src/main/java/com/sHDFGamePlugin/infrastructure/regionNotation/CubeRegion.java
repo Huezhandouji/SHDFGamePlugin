@@ -11,10 +11,10 @@ public class CubeRegion implements Region{
     private final Vector origin;
     private final Vector size;
 
-    //必须保证size的分量都是正数
+    //必须保证size的分量都是非负数
     private CubeRegion(Vector origin, Vector size){
-        if(size.getX() <= 0 || size.getY() <= 0 || size.getZ() <= 0){
-            throw new IllegalArgumentException("All vector components of 'size' must be positive!");
+        if(size.getX() < 0 || size.getY() < 0 || size.getZ() < 0){
+            throw new IllegalArgumentException("All vector components of 'size' must be Non-Negative!");
         }
         if (Double.isNaN(size.getX()) || Double.isInfinite(size.getX()) ||
                 Double.isNaN(size.getY()) || Double.isInfinite(size.getY()) ||

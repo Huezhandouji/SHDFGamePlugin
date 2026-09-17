@@ -41,10 +41,11 @@ kotlin {
 }
 
 //自动复制到服务端文件夹
-tasks.register<Copy>("copyPluginJar"){
+tasks.register<Copy>("copyPluginJar") {
+    // 只有当属性存在时才注册复制动作
+    val dest = project.findProperty("pluginCopyPath") as String? ?: return@register
     from(layout.buildDirectory.file("libs/${project.name}-${project.version}.jar"))
-    //目标路径
-    into("C:/Users/ROG/Desktop/paper1.21.11/plugins")
+    into(dest)
 }
 
 tasks.named("build"){

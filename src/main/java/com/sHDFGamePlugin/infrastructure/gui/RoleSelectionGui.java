@@ -121,7 +121,7 @@ public final class RoleSelectionGui {
 
         //Lore：已选择该角色的玩家名单；有人选择时附加魔光效
         List<String> selectors = getRoleSelectors(team, roleId);
-        List<Component> lore = new ArrayList<>();
+        List<Component> lore = new ArrayList<>(RoleBridge.getInstance().getRoleDescription(roleId));
         if(selectors.isEmpty()){
             lore.add(Component.text("尚未有人选择", NamedTextColor.GRAY));
         }

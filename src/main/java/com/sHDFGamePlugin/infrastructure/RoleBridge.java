@@ -217,7 +217,7 @@ public class RoleBridge {
         return roleAPI.getRoleDisplayName(roleId);
     }
 
-    public Component getRoleDescription(String roleId){
+    public List<Component> getRoleDescription(String roleId){
         return roleAPI.getRoleDescription(roleId);
     }
 

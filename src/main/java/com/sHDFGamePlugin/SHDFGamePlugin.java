@@ -5,6 +5,7 @@ import com.sHDFGamePlugin.core.GameContext;
 import com.sHDFGamePlugin.core.GameStateMachine;
 import com.sHDFGamePlugin.infrastructure.RoleBridge;
 import com.sHDFGamePlugin.infrastructure.item.InteractionManager;
+import com.sHDFGamePlugin.listener.FoodLevelKeeper;
 import com.sHDFGamePlugin.listener.PlayerJoinListener;
 import com.sHDFGamePlugin.listener.PlayerQuitListener;
 import org.bukkit.Bukkit;
@@ -45,6 +46,7 @@ public final class SHDFGamePlugin extends JavaPlugin {
         Bukkit.getPluginManager().registerEvents(InteractionManager.getInstance(), this);
         Bukkit.getPluginManager().registerEvents(new PlayerJoinListener(), this);
         Bukkit.getPluginManager().registerEvents(new PlayerQuitListener(), this);
+        Bukkit.getPluginManager().registerEvents(new FoodLevelKeeper(), this);
 
         GameContext.getInstance().init(this);
         RoleBridge.getInstance().init();
@@ -75,7 +77,7 @@ public final class SHDFGamePlugin extends JavaPlugin {
             getLogger().severe("You should install 'ShadowHunterRolesPlugin' first!");
             return false;
         }
-        getLogger().info("Succeeded to find the dependency 'ShadowHunterRolesPlugin'!");
+        getLogger().info("Succeed to find the dependency 'ShadowHunterRolesPlugin'!");
         return true;
     }
 

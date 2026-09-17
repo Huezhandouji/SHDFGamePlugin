@@ -18,6 +18,7 @@ import com.sHDFGamePlugin.infrastructure.event.ShdfPlayerQuitEvent;
 import com.sHDFGamePlugin.infrastructure.gui.ChestGui;
 import com.sHDFGamePlugin.infrastructure.item.GameItem;
 import com.sHDFGamePlugin.infrastructure.item.GameItemRegistry;
+import com.sHDFGamePlugin.infrastructure.item.GuideBookFactory;
 import com.sHDFGamePlugin.util.GameCountdown;
 import com.sHDFGamePlugin.util.MessageUtil;
 import com.sHDFGamePlugin.util.SoundUtil;
@@ -46,6 +47,8 @@ public class WaitingPhase implements GamePhase {
     private static final String teamSelectorId = "gameItem_waitingPhase_teamSelector";
     private static final String readyToggleId = "gameItem_waitingPhase_readyToggle";
     private static final String mapVoteId = "gameItem_waitingPhase_mapVote";
+    /** 玩法说明书（快捷栏第 6 格，内容取自数据目录的 gameplay_guide.txt） */
+    private static final String guideBookId = "gameItem_waitingPhase_guideBook";
 
     private static final String teamButtonAttackerId = "gameItem_waitingPhase_teamButtonAttacker";
     private static final String teamButtonDefenderId = "gameItem_waitingPhase_teamButtonDefender";
@@ -316,6 +319,16 @@ public class WaitingPhase implements GamePhase {
         registerRightClickItem(teamSelectorId);
         registerRightClickItem(readyToggleId);
         registerRightClickItem(mapVoteId);
+        //玩法说明书：受保护（不可丢弃/移动）；右键时本类显式打开成书——因为 InteractionManager
+        //对已注册 GameItem 的右键一律 setCancelled(true)，原版「右键翻书」不会自己被触发
+        GameItemRegistry.createAndRegister(guideBookId, builder ->
+                builder.canDrop(false).canMove(false)
+                        .rightClickHandler(event -> {
+                            ItemStack held = event.getItem();
+                            event.getPlayer().openBook(held != null && held.getType() == Material.WRITTEN_BOOK
+                                    ? held
+                                    : GuideBookFactory.getInstance().createBook());
+                        }));
         //选队菜单物品：库存点击发布事件
         registerInventoryClickItem(teamButtonAttackerId);
         registerInventoryClickItem(teamButtonDefenderId);
@@ -349,6 +362,8 @@ public class WaitingPhase implements GamePhase {
         }
         Location location = config.getLobbySpawnpoint().toLocation(world);
         player.teleport(location);
+
+        player.getInventory().clear();
 
         TeamManager.getInstance().removePlayer(player.getUniqueId());
         registerPlayer(player);
@@ -496,6 +511,9 @@ public class WaitingPhase implements GamePhase {
         }
 
         inv.setItem(2, createMapVoteItem());
+
+        //第 6 格（索引 5）：玩法说明书，右键翻开；内容来自数据目录的 gameplay_guide.txt
+        inv.setItem(5, GuideBookFactory.getInstance().createBook());
     }
 
     private ItemStack createTeamSelectorItem(){
@@ -621,7 +639,7 @@ public class WaitingPhase implements GamePhase {
     private void openTeamSelectionGui(Player player){
         ItemStack buttonAttacker = buildTeamButton(Material.NETHERITE_SWORD, "进攻方-SHADOW", NamedTextColor.LIGHT_PURPLE,
                 teamButtonAttackerId, ShdfTeam.ATTACKER, null);
-        ItemStack buttonDefender = buildTeamButton(Material.BEDROCK, "防守方-SHADOW", NamedTextColor.YELLOW,
+        ItemStack buttonDefender = buildTeamButton(Material.BEDROCK, "防守方-HUNTER", NamedTextColor.YELLOW,
                 teamButtonDefenderId, ShdfTeam.DEFENDER, null);
         ItemStack buttonSpectator = buildTeamButton(Material.PLAYER_HEAD, "观众", NamedTextColor.BLUE,
                 teamButtonSpectatorId, ShdfTeam.SPECTATOR,
