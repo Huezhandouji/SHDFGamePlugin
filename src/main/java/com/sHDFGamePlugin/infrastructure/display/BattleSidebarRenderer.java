@@ -1,6 +1,5 @@
 package com.sHDFGamePlugin.infrastructure.display;
 
-import com.sHDFGamePlugin.SHDFGamePlugin;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
 import net.kyori.adventure.text.format.TextDecoration;
@@ -22,6 +21,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.function.Supplier;
 
 /**
  * 战斗侧边栏渲染器。<b>每个玩家一份独立记分板</b>（objective 名相同，但实例按玩家隔离）。
@@ -102,6 +102,20 @@ public final class BattleSidebarRenderer {
      * <p><b>生产代码不得写此字段</b>；探针用后必须在 finally 中还原为 {@code null}。</p>
      */
     static Scoreboard sharedScoreboardOverride;
+
+    /**
+     * 共享记分板来源（构造时注入插件实例的 {@code tempScoreboard} 取值器）。
+     * <p>不在此处访问插件单例：渲染器由 {@link BattleDisplayService} 构造并随阶段生命周期废弃。</p>
+     */
+    private final Supplier<Scoreboard> sharedScoreboardSource;
+
+    public BattleSidebarRenderer() {
+        this(null);
+    }
+
+    public BattleSidebarRenderer(Supplier<Scoreboard> sharedScoreboardSource) {
+        this.sharedScoreboardSource = sharedScoreboardSource;
+    }
 
     /** 记分板工厂接口（见 {@link #scoreboardFactory}） */
     interface ScoreboardFactory {
@@ -442,16 +456,20 @@ public final class BattleSidebarRenderer {
         }
     }
 
-    /** 插件共用的记分板（Waiting/RoleSelecting 用的 tempScoreboard）；插件未就绪返回 null */
-    private static Scoreboard sharedScoreboard() {
+    /** 插件共用的记分板（Waiting/RoleSelecting 用的 tempScoreboard）；未注入或插件未就绪返回 null */
+    private Scoreboard sharedScoreboard() {
         if(sharedScoreboardOverride != null){
             return sharedScoreboardOverride;
         }
-        SHDFGamePlugin plugin = SHDFGamePlugin.getInstance();
-        if(plugin == null){
+        if(sharedScoreboardSource == null){
             return null;
         }
-        return plugin.getTempScoreboard();
+        try{
+            return sharedScoreboardSource.get();
+        }
+        catch(RuntimeException | LinkageError ignored){
+            return null;
+        }
     }
 
     private static ScoreboardManager scoreboardManager() {

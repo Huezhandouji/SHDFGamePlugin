@@ -7,6 +7,7 @@ import net.kyori.adventure.text.format.NamedTextColor;
 import net.kyori.adventure.text.format.TextDecoration;
 import org.bukkit.Location;
 import org.bukkit.Material;
+import org.bukkit.NamespacedKey;
 import org.bukkit.entity.Player;
 import org.bukkit.event.player.PlayerInteractEvent;
 import org.bukkit.inventory.ItemStack;
@@ -58,6 +59,7 @@ public final class CompassItemFactory {
     private final String itemId;
     private final Consumer<PlayerInteractEvent> rightClickHandler;
     private final BiConsumer<Player, BattleBombInfo> leftClickListener;
+    private final GameItemRegistry gameItemRegistry;
 
     //玩家 -> 当前指向的炸弹 id
     private final Map<UUID, String> targetedBombIds = new HashMap<>();
@@ -65,10 +67,12 @@ public final class CompassItemFactory {
     private final Map<UUID, List<BattleBombInfo>> knownBombs = new HashMap<>();
 
     private CompassItemFactory(String itemId, Consumer<PlayerInteractEvent> rightClickHandler,
-                               BiConsumer<Player, BattleBombInfo> leftClickListener) {
+                               BiConsumer<Player, BattleBombInfo> leftClickListener,
+                               GameItemRegistry gameItemRegistry) {
         this.itemId = itemId;
         this.rightClickHandler = rightClickHandler;
         this.leftClickListener = leftClickListener;
+        this.gameItemRegistry = gameItemRegistry;
     }
 
     public static Builder builder() {
@@ -82,7 +86,7 @@ public final class CompassItemFactory {
     // ==================== 物品 ====================
 
     /** 构建 slot 8 指南针物品（带 GameItem id，材质 COMPASS） */
-    public ItemStack createItem() {
+    public ItemStack createItem(NamespacedKey gameItemKey) {
         ItemStack item = new ItemStack(Material.COMPASS);
         ItemMeta meta = item.getItemMeta();
         meta.displayName(Component.text("战斗指南针", NamedTextColor.AQUA, TextDecoration.BOLD));
@@ -90,14 +94,14 @@ public final class CompassItemFactory {
                 Component.text("左键: 切换指向当前据点的炸弹", NamedTextColor.GRAY),
                 Component.text("右键: 打开战斗菜单", NamedTextColor.GRAY)
         ));
-        meta = GameItem.applyIdOnItemMeta(itemId, meta);
+        meta = GameItem.applyIdOnItemMeta(gameItemKey, itemId, meta);
         item.setItemMeta(meta);
         return item;
     }
 
     /** 注册 GameItem（含左键/右键回调）；幂等 */
     public void register() {
-        GameItemRegistry.createAndRegister(itemId, builder -> builder
+        gameItemRegistry.createAndRegister(itemId, builder -> builder
                 .canDrop(false)
                 .canMove(false)
                 .rightClickHandler(event -> handleRightClick(event))
@@ -106,7 +110,7 @@ public final class CompassItemFactory {
 
     /** 注销 GameItem 并清空指向记录；幂等 */
     public void unregister() {
-        GameItemRegistry.unregister(itemId);
+        gameItemRegistry.unregister(itemId);
         clearAll();
     }
 
@@ -244,6 +248,7 @@ public final class CompassItemFactory {
         private String itemId = DEFAULT_ITEM_ID;
         private Consumer<PlayerInteractEvent> rightClickHandler;
         private BiConsumer<Player, BattleBombInfo> leftClickListener;
+        private GameItemRegistry gameItemRegistry;
 
         private Builder() {}
 
@@ -265,6 +270,12 @@ public final class CompassItemFactory {
             return this;
         }
 
+        /** GameItem 注册表（注册/注销指南针物品必需） */
+        public Builder gameItemRegistry(GameItemRegistry gameItemRegistry) {
+            this.gameItemRegistry = gameItemRegistry;
+            return this;
+        }
+
         public CompassItemFactory build() {
             if(itemId == null || itemId.isBlank()){
                 throw new IllegalStateException("itemId must not be blank");
@@ -272,7 +283,10 @@ public final class CompassItemFactory {
             if(rightClickHandler == null){
                 throw new IllegalStateException("rightClickHandler is required");
             }
-            return new CompassItemFactory(itemId, rightClickHandler, leftClickListener);
+            if(gameItemRegistry == null){
+                throw new IllegalStateException("gameItemRegistry is required");
+            }
+            return new CompassItemFactory(itemId, rightClickHandler, leftClickListener, gameItemRegistry);
         }
     }
 

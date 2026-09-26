@@ -34,15 +34,15 @@ import java.util.UUID;
  * → 标记"死后等待"以开始每秒播报（见 {@link DeploymentController#sendDeathCountdownMessages()}）。
  * <p>
  * 监听器随阶段注册/注销（{@code PlayingPhase.onEnter/onExit}），句柄存于 {@link MatchSessionState}。
+ * <p>
+ * 实例由 {@link GameContext} 创建并持有（不再有静态单例）。
  */
 public final class DeathHandler {
 
-    private static final DeathHandler INSTANCE = new DeathHandler();
+    private final GameContext ctx;
 
-    private DeathHandler() {}
-
-    public static DeathHandler getInstance() {
-        return INSTANCE;
+    public DeathHandler(GameContext ctx) {
+        this.ctx = ctx;
     }
 
     /**
@@ -57,13 +57,13 @@ public final class DeathHandler {
     private void recordKillAndDeath(Player victim, PlayerStatus victimStatus){
         victimStatus.addDeath();
 
-        UUID killerUuid = RoleBridge.getInstance().getLastDamagerUuid(victim);
+        UUID killerUuid = ctx.getRoleBridge().getLastDamagerUuid(victim);
         if(killerUuid == null || killerUuid.equals(victim.getUniqueId())) return;
 
         Player killer = Bukkit.getPlayer(killerUuid);
         if(killer == null) return;
 
-        PlayerStatus killerStatus = TeamManager.getInstance().getPlayerStatus(killerUuid);
+        PlayerStatus killerStatus = ctx.getTeamManager().getPlayerStatus(killerUuid);
         if(killerStatus == null || killerStatus.getTeam() == null) return;
         if(!killerStatus.getTeam().isCombatant()) return;
         //同队击杀（误伤）不计入击杀数
@@ -74,10 +74,10 @@ public final class DeathHandler {
 
     /** 构建击杀信息：经 RoleAPI.getLastDamagerUuid 定位击杀者（勿用原版 getKiller）；无击杀者则报"阵亡" */
     public Component buildKillMessage(Player victim){
-        UUID killerUuid = RoleBridge.getInstance().getLastDamagerUuid(victim);
+        UUID killerUuid = ctx.getRoleBridge().getLastDamagerUuid(victim);
         Player killer = killerUuid == null ? null : Bukkit.getPlayer(killerUuid);
         if(killer != null && killer != victim){
-            PlayerStatus killerStatus = TeamManager.getInstance().getPlayerStatus(killerUuid);
+            PlayerStatus killerStatus = ctx.getTeamManager().getPlayerStatus(killerUuid);
             if(killerStatus != null && killerStatus.getTeam() != null && killerStatus.getTeam().isCombatant()){
                 return Component.text(victim.getName() + " 被 " + killer.getName() + " 击杀了", NamedTextColor.GRAY);
             }
@@ -88,10 +88,10 @@ public final class DeathHandler {
     /** 死亡处理：仅处理 IN_BATTLE 参战玩家；取消原版死亡以保持原地（不传送），转入等待重生流程 */
     public void handlePlayerDeath(PlayerDeathEvent event){
         Player victim = event.getEntity();
-        MatchSessionState state = MatchSessionState.getInstance();
+        MatchSessionState state = ctx.getMatchSessionState();
         if(state.isMatchEnded()) return;
 
-        PlayerStatus status = TeamManager.getInstance().getPlayerStatus(victim.getUniqueId());
+        PlayerStatus status = ctx.getTeamManager().getPlayerStatus(victim.getUniqueId());
         if(status == null || status.getTeam() == null || !status.getTeam().isCombatant()) return;
         if(status.getState() != PlayerState.IN_BATTLE) return;
 
@@ -117,37 +117,44 @@ public final class DeathHandler {
 
         //进攻方死亡扣 1 票（耗尽时发布 TicketDepletedEvent，对局结束判定由 SectorProgressController 接听）
         if(status.getTeam() == ShdfTeam.ATTACKER){
-            TicketManager.getInstance().decreaseTicket(1);
+            ctx.getTicketManager().decreaseTicket(1);
         }
 
         //死亡释放角色占用，重新部署时再重新应用（避免角色插件已清空角色但本地占用表残留导致重部署失败）
-        RoleBridge.getInstance().clearPlayerRole(victim.getUniqueId());
+        ctx.getRoleBridge().clearPlayerRole(victim.getUniqueId());
 
         //原地转为等待重生（创造隐身，不传送）+ DEPLOYING + 进重生队列
-        DeploymentController.getInstance().setAwaitingLook(victim);
+        ctx.getDeploymentController().setAwaitingLook(victim);
         status.setState(PlayerState.DEPLOYING);
-        SpawnManager.getInstance().addPlayer(victim.getUniqueId(), status.getTeam());
+        ctx.getSpawnManager().addPlayer(victim.getUniqueId(), status.getTeam());
         //标记为"死后等待"，开始每秒播报重新部署倒计时
         state.putDeathCountdownSeconds(victim.getUniqueId(), -1);
     }
 
     /** 战斗死亡监听器（随阶段注册/注销） */
     private static class CombatDeathListener implements Listener {
+
+        private final DeathHandler deathHandler;
+
+        CombatDeathListener(DeathHandler deathHandler) {
+            this.deathHandler = deathHandler;
+        }
+
         @EventHandler
         public void onPlayerDeath(PlayerDeathEvent event){
-            DeathHandler.getInstance().handlePlayerDeath(event);
+            deathHandler.handlePlayerDeath(event);
         }
     }
 
     public void register(){
-        MatchSessionState state = MatchSessionState.getInstance();
-        Listener deathListener = new CombatDeathListener();
-        Bukkit.getPluginManager().registerEvents(deathListener, GameContext.getInstance().getPlugin());
+        MatchSessionState state = ctx.getMatchSessionState();
+        Listener deathListener = new CombatDeathListener(this);
+        Bukkit.getPluginManager().registerEvents(deathListener, ctx.getPlugin());
         state.setDeathListener(deathListener);
     }
 
     public void unregister(){
-        MatchSessionState state = MatchSessionState.getInstance();
+        MatchSessionState state = ctx.getMatchSessionState();
         Listener deathListener = state.getDeathListener();
         if(deathListener != null){
             for(HandlerList handlerList : HandlerList.getHandlerLists()){

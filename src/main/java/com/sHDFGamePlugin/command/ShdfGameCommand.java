@@ -1,5 +1,6 @@
 package com.sHDFGamePlugin.command;
 
+import com.sHDFGamePlugin.core.GameContext;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandExecutor;
 import org.bukkit.command.CommandSender;
@@ -19,9 +20,9 @@ public class ShdfGameCommand implements CommandExecutor, TabCompleter {
 
     private final Map<String, SubCommand> subCommands = new TreeMap<>();
 
-    public ShdfGameCommand() {
-        registerSubCommand(new ConfigCommand());
-        registerSubCommand(new DebugCommand());
+    public ShdfGameCommand(GameContext ctx) {
+        registerSubCommand(new ConfigCommand(ctx));
+        registerSubCommand(new DebugCommand(ctx));
     }
 
     private void registerSubCommand(SubCommand subCommand) {

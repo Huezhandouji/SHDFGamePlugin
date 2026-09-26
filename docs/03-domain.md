@@ -9,7 +9,7 @@
 | `ShdfTeam` | 枚举：ATTACKER（进攻/SHADOW）、DEFENDER（防守/HUNTER）、SPECTATOR、UNKNOWN（随机分配）。`isParticipant()`（前三者参战）、`isCombatant()`（仅进攻/防守） |
 | `PlayerState` | 玩家状态：WAITING / ROLE_SELECTING / DEPLOYING / IN_BATTLE（DEPLOYING = 等待部署，开局全员等待与死后等待共用） |
 | `PlayerStatus` | 单玩家的可变状态：uuid / team / ready / state / selectedRoleId（整场所选角色，选角阶段记录） |
-| `TeamManager` | 单例，`Map<UUID, PlayerStatus>`：阵营查询/切换（发 `TeamChangedEvent`）、准备状态、人数统计、`autoAssignUnknownTeamPlayers()`（随机玩家分到少人一方）等 |
+| `TeamManager` | 实例（`GameContext` 持有），`Map<UUID, PlayerStatus>`：阵营查询/切换（发 `TeamChangedEvent`）、准备状态、人数统计、`autoAssignUnknownTeamPlayers()`（随机玩家分到少人一方）等 |
 
 注意：
 - `addPlayer(uuid, team, state)` 需要第三个参数；WAITING 阶段创建时传 `WAITING`。
@@ -23,7 +23,7 @@
 - `BombState`：UNPLANTED / PLANTED / EXPLODED。
 - `ActiveBomb`：运行时炸弹（config + state + 引信剩余 + 任务引用），`plant/defuse/explode/tickFuse/stopFuse`。
 - `SectorTimeLimit`：据点时限倒计时，归零发布 `SectorTimeLimitExpiredEvent`。
-- `SectorManager`（单例）：
+- `SectorManager`（实例，`GameContext` 持有；构造注入 `JavaPlugin` 用于调度）：
   - 当前据点 `Map<bombId, ActiveBomb>`（LinkedHashMap 保序）；
   - `onBombPlantSuccess(bombId)` / `onBombDefuseSuccess(bombId)`：切换单弹状态并发布事件；
   - 引信归零 → 该弹 EXPLODED + 发布 `BombExplodedEvent`（**不推进**，由 PlayingPhase 收齐后推进）；
@@ -39,7 +39,7 @@
 
 ## spawn（重生与部署）
 
-- `SpawnManager`（单例）：
+- `SpawnManager`（实例，`GameContext` 持有；构造注入 `JavaPlugin` / `SectorManager` / `TeamManager` / `RoleBridge`）：
   - `respawnQueue: Map<UUID, PendingRespawn>`（死亡后按阵营等待不同 tick）；
   - `addPlayer(uuid, team)` 死亡入队、`update()` 每 tick 递减、`canRespawn`/`getRemainingRespawnTime`；
   - `deployPlayer(uuid, roleId)`：传送当前据点本方出生区随机点 → ADVENTURE → `state=IN_BATTLE` → 经 RoleBridge 应用角色 → 出队。

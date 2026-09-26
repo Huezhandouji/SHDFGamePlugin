@@ -1,6 +1,6 @@
 package com.sHDFGamePlugin.command;
 
-import com.sHDFGamePlugin.infrastructure.config.ConfigManager;
+import com.sHDFGamePlugin.core.GameContext;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
 import org.bukkit.command.CommandSender;
@@ -13,6 +13,12 @@ import java.util.List;
  * 用法：sg config reload —— 重新加载 config.yml 与 maps.yml
  */
 public class ConfigCommand implements SubCommand {
+
+    private final GameContext ctx;
+
+    public ConfigCommand(GameContext ctx) {
+        this.ctx = ctx;
+    }
 
     @Override
     public String getName() {
@@ -56,7 +62,7 @@ public class ConfigCommand implements SubCommand {
 
     private void reloadConfig(CommandSender sender) {
         try {
-            ConfigManager.getInstance().reload();
+            ctx.getConfigManager().reload();
             sender.sendMessage(Component.text("配置已重新加载 (config.yml / maps.yml)", NamedTextColor.GREEN));
         } catch (Exception e) {
             sender.sendMessage(Component.text("配置重载失败: " + e.getMessage(), NamedTextColor.RED));

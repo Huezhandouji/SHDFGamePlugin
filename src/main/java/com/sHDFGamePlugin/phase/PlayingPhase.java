@@ -2,15 +2,11 @@ package com.sHDFGamePlugin.phase;
 
 import com.sHDFGamePlugin.core.GameContext;
 import com.sHDFGamePlugin.core.GameState;
-import com.sHDFGamePlugin.core.GameStateMachine;
-import com.sHDFGamePlugin.domain.sector.SectorManager;
 import com.sHDFGamePlugin.domain.spawn.SpawnManager;
 import com.sHDFGamePlugin.domain.team.PlayerState;
 import com.sHDFGamePlugin.domain.team.PlayerStatus;
 import com.sHDFGamePlugin.domain.team.ShdfTeam;
 import com.sHDFGamePlugin.domain.team.TeamManager;
-import com.sHDFGamePlugin.domain.ticket.TicketManager;
-import com.sHDFGamePlugin.infrastructure.DisconnectProtection;
 import com.sHDFGamePlugin.infrastructure.GameEventBus;
 import com.sHDFGamePlugin.infrastructure.RoleBridge;
 import com.sHDFGamePlugin.infrastructure.config.ConfigManager;
@@ -68,12 +64,11 @@ import java.util.UUID;
  */
 public class PlayingPhase implements GamePhase {
 
-    private static final PlayingPhase INSTANCE = new PlayingPhase();
+    private final GameContext ctx;
 
-    private PlayingPhase() {}
-
-    public static PlayingPhase getInstance() {
-        return INSTANCE;
+    /** 实例由 {@link GameContext} 创建并持有（不再有静态单例） */
+    public PlayingPhase(GameContext ctx) {
+        this.ctx = ctx;
     }
 
     //事件订阅
@@ -83,57 +78,57 @@ public class PlayingPhase implements GamePhase {
 
     @Override
     public void onEnter() {
-        GameContext.getInstance().getPlugin().getLogger().info("游戏进入 PLAYING 状态");
-        MatchSessionState.getInstance().setMatchEnded(false);
+        ctx.getPlugin().getLogger().info("游戏进入 PLAYING 状态");
+        ctx.getMatchSessionState().setMatchEnded(false);
 
         //1. 初始化本局系统：防御性清理后加载据点/票数/重生配置
         initMatchSystems();
         //2. 入场：所有参战玩家先视为死亡状态等待重生（各阵营倒计时结束后自动部署）
-        DeploymentController.getInstance().enterAwaitingRespawn();
+        ctx.getDeploymentController().enterAwaitingRespawn();
         //3. 广播对局开始提示（以较长的阵营重生时间为准）
-        DeploymentController.getInstance().broadcastMatchStart();
+        ctx.getDeploymentController().broadcastMatchStart();
         //4. 注册等待期行为守卫（禁破坏/放置/攻击）
-        DeploymentController.getInstance().registerGuard();
+        ctx.getDeploymentController().registerGuard();
         //5. 注册战斗死亡监听器（真实死亡流程）
-        DeathHandler.getInstance().register();
+        ctx.getDeathHandler().register();
         //5.1 注册装弹/拆弹移动冻结守卫
-        BombInteractionController.getInstance().registerFreezeGuard();
+        ctx.getBombInteractionController().registerFreezeGuard();
         //6. 启动重生倒计时驱动（每 tick 递减队列、播报死亡倒计时、就绪自动部署）
-        DeploymentController.getInstance().startRespawnTickTask();
+        ctx.getDeploymentController().startRespawnTickTask();
         //7. 订阅事件
         subscribeEvents();
         //7.1 间歇期模块：必须在订阅对局闭环之前——GameEventBus 按注册顺序分发，
         //    间歇期要在"据点推进（advanceToNextSector）激活新据点"之前看到"当前据点全部炸弹爆炸"
-        IntermissionController.getInstance().start();
+        ctx.getIntermissionController().start();
         //7.2 订阅对局闭环事件（据点攻占推进 / 票数耗尽 / 据点时限超时 → FINISHED）
-        SectorProgressController.getInstance().subscribe();
+        ctx.getSectorProgressController().subscribe();
         //8. 注册对局物品（装弹/拆弹/战斗菜单）并订阅右键交互
-        PlayingItemFactory.getInstance().registerPlayingItems();
+        ctx.getPlayingItemFactory().registerPlayingItems();
         subscribeRightClick();
         //9. 启动装弹/拆弹进度驱动与已激活炸弹粒子效果
-        BombInteractionController.getInstance().startBombProgressTickTask();
-        BombInteractionController.getInstance().startBombParticleTask();
+        ctx.getBombInteractionController().startBombProgressTickTask();
+        ctx.getBombInteractionController().startBombParticleTask();
         //10. 表现层桥接：BossBar/侧边栏/指南针（刷新任务按玩家状态自动收敛，部署/死亡/观战/重连无需单独接线）
-        MatchDisplayBridge.getInstance().start();
+        ctx.getMatchDisplayBridge().start();
     }
 
     @Override
     public void onExit() {
-        MatchDisplayBridge.getInstance().stop();
+        ctx.getMatchDisplayBridge().stop();
         unsubscribeEvents();
         unsubscribeRightClick();
-        SectorProgressController.getInstance().unsubscribe();
-        IntermissionController.getInstance().stop();
-        BombInteractionController.getInstance().stopBombProgressTickTask();
-        BombInteractionController.getInstance().stopBombParticleTask();
-        MatchSessionState.getInstance().clearActiveProgresses();
-        PlayingItemFactory.getInstance().unregisterPlayingItems();
-        DeploymentController.getInstance().stopRespawnTickTask();
-        DeploymentController.getInstance().unregisterGuard();
-        DeathHandler.getInstance().unregister();
-        BombInteractionController.getInstance().unregisterFreezeGuard();
-        MatchSessionState.getInstance().clearDeployFailureLogged();
-        MatchSessionState.getInstance().clearDeathCountdown();
+        ctx.getSectorProgressController().unsubscribe();
+        ctx.getIntermissionController().stop();
+        ctx.getBombInteractionController().stopBombProgressTickTask();
+        ctx.getBombInteractionController().stopBombParticleTask();
+        ctx.getMatchSessionState().clearActiveProgresses();
+        ctx.getPlayingItemFactory().unregisterPlayingItems();
+        ctx.getDeploymentController().stopRespawnTickTask();
+        ctx.getDeploymentController().unregisterGuard();
+        ctx.getDeathHandler().unregister();
+        ctx.getBombInteractionController().unregisterFreezeGuard();
+        ctx.getMatchSessionState().clearDeployFailureLogged();
+        ctx.getMatchSessionState().clearDeathCountdown();
         //阶段切换清理：关闭所有打开的游戏 GUI，回收快捷栏中的阶段物品（slot 0 / 7 / 8）
         ChestGui.closeAllGuis();
         for(Player player : Bukkit.getOnlinePlayers()){
@@ -147,25 +142,25 @@ public class PlayingPhase implements GamePhase {
 
     /** 初始化本局据点/票数/重生系统（先防御性清理，防止上一局残留任务影响本局） */
     private void initMatchSystems(){
-        ConfigManager config = ConfigManager.getInstance();
+        ConfigManager config = ctx.getConfigManager();
         MapConfig mapConfig = config.getSelectedMapConfig();
         if(mapConfig == null){
-            GameContext.getInstance().getPlugin().getLogger().warning("[PlayingPhase] 未选择地图, 无法初始化对局系统!");
+            ctx.getPlugin().getLogger().warning("[PlayingPhase] 未选择地图, 无法初始化对局系统!");
             return;
         }
 
         //防御性清理：停掉可能残留的引信/据点时限任务与队列
-        SectorManager.getInstance().cleanup();
-        SpawnManager.getInstance().clearAll();
-        TicketManager.getInstance().reset();
+        ctx.getSectorManager().cleanup();
+        ctx.getSpawnManager().clearAll();
+        ctx.getTicketManager().reset();
 
         //区域推进间隔：来自地图级配置（缺键回退 0 = 攻占后立即开启，等同旧行为）
-        SectorManager.getInstance().setSectorAdvanceInterval(mapConfig.getSectorAdvanceInterval());
+        ctx.getSectorManager().setSectorAdvanceInterval(mapConfig.getSectorAdvanceInterval());
 
         //载入当前地图的据点列表，激活并开启第一个据点（第一个据点开局即开启，间歇期只在推进时出现）
-        SectorManager.getInstance().loadMap(mapConfig.getSectors());
-        TicketManager.getInstance().init(mapConfig.getInitialTickets(), mapConfig.getMaxTickets());
-        SpawnManager.getInstance().setCurrentMapConfig(mapConfig);
+        ctx.getSectorManager().loadMap(mapConfig.getSectors());
+        ctx.getTicketManager().init(mapConfig.getInitialTickets(), mapConfig.getMaxTickets());
+        ctx.getSpawnManager().setCurrentMapConfig(mapConfig);
     }
 
     // ==================== 玩家加入/退出 ====================
@@ -174,52 +169,51 @@ public class PlayingPhase implements GamePhase {
     private void handlePlayerJoin(ShdfPlayerJoinEvent event){
         Player player = event.getPlayer();
         UUID uuid = player.getUniqueId();
-        TeamManager teamManager = TeamManager.getInstance();
+        TeamManager teamManager = ctx.getTeamManager();
 
         //玩家已上线，取消其挂起的断线保护任务
-        DisconnectProtection.getInstance().cancel(uuid);
+        ctx.getDisconnectProtection().cancel(uuid);
 
         PlayerStatus status = teamManager.getPlayerStatus(uuid);
         if(status != null && status.getTeam() != null && status.getTeam().isCombatant()){
             //断线重连：按保留的玩家状态恢复
             if(status.getState() == PlayerState.IN_BATTLE){
-                DeploymentController.getInstance().restoreCombatant(player, status);
+                ctx.getDeploymentController().restoreCombatant(player, status);
                 return;
             }
             if(status.getState() == PlayerState.DEPLOYING){
-                DeploymentController.getInstance().restoreAwaitingRespawn(player, status);
+                ctx.getDeploymentController().restoreAwaitingRespawn(player, status);
                 return;
             }
         }
 
         //新来者 / 状态过期 → 转为观战者并传送观战出生点
-        DeploymentController.getInstance().makeSpectator(player);
+        ctx.getDeploymentController().makeSpectator(player);
     }
 
     /** 退出事件入口：空服则清理本局状态后回 IDLE；否则保留 PlayerStatus（断线保护），超过重连时限仍未上线才移除 */
     private void handlePlayerQuit(ShdfPlayerQuitEvent event){
         UUID uuid = event.getPlayer().getUniqueId();
-        MatchSessionState state = MatchSessionState.getInstance();
+        MatchSessionState state = ctx.getMatchSessionState();
 
         //空服判定：PlayerQuitEvent 触发时退出者仍留在在线列表，必须按"除退出者外无人在线"判断
         if(isServerEmptyExcept(uuid)){
             //空服：先清理本局系统状态（引信/据点时限/重生队列/票数/角色占用/断线保护任务），防止跨局残留
             cleanupMatchState();
-            GameStateMachine.getInstance().transitionTo(GameState.IDLE);
+            ctx.getGameStateMachine().transitionTo(GameState.IDLE);
             return;
         }
 
         //断线保护：保留 PlayerStatus 与角色占用，超过重连时限仍未上线才移除
-        DisconnectProtection.getInstance().start(
-                GameContext.getInstance().getPlugin(),
+        ctx.getDisconnectProtection().start(
                 uuid,
-                ConfigManager.getInstance().getPlayingReconnectTimeLimit(),
+                ctx.getConfigManager().getPlayingReconnectTimeLimit(),
                 expiredUuid -> {
-                    TeamManager.getInstance().removePlayer(expiredUuid);
-                    SpawnManager.getInstance().removePlayer(expiredUuid);
+                    ctx.getTeamManager().removePlayer(expiredUuid);
+                    ctx.getSpawnManager().removePlayer(expiredUuid);
                     state.removeDeployFailureLogged(expiredUuid);
                     state.removeDeathCountdown(expiredUuid);
-                    RoleBridge.getInstance().clearPlayerRole(expiredUuid);
+                    ctx.getRoleBridge().clearPlayerRole(expiredUuid);
                 }
         );
     }
@@ -237,18 +231,18 @@ public class PlayingPhase implements GamePhase {
     /** 空服回 IDLE 前的本局状态清理（与 RoleSelectingPhase/FinishedPhase 的清理语义一致） */
     private void cleanupMatchState(){
         //据点/炸弹：停止引信与据点时限任务
-        SectorManager.getInstance().cleanup();
+        ctx.getSectorManager().cleanup();
         //队伍/玩家状态：清空全部 PlayerStatus
-        TeamManager.getInstance().reset();
+        ctx.getTeamManager().reset();
         //重生队列
-        SpawnManager.getInstance().clearAll();
+        ctx.getSpawnManager().clearAll();
         //票数
-        TicketManager.getInstance().reset();
+        ctx.getTicketManager().reset();
         //角色占用记录清空，重复规则还原为配置默认值
-        RoleBridge.getInstance().clearAllOccupiedRoles();
-        RoleBridge.getInstance().setAllowDuplicateRoles(ConfigManager.getInstance().isAllowDuplicateRoles());
+        ctx.getRoleBridge().clearAllOccupiedRoles();
+        ctx.getRoleBridge().setAllowDuplicateRoles(ctx.getConfigManager().isAllowDuplicateRoles());
         //取消所有挂起的断线保护任务（服务器已空，无重连可能）
-        DisconnectProtection.getInstance().cancelAll();
+        ctx.getDisconnectProtection().cancelAll();
         //关闭所有打开的游戏 GUI
         ChestGui.closeAllGuis();
     }
@@ -268,7 +262,7 @@ public class PlayingPhase implements GamePhase {
 
     /** 右键物品入口：战斗菜单任意状态可用；装弹/拆弹需 IN_BATTLE 参战玩家 */
     private void handleRightClickGameItem(RightClickGameItemEvent event){
-        if(MatchSessionState.getInstance().isMatchEnded()) return;
+        if(ctx.getMatchSessionState().isMatchEnded()) return;
         Player player = event.getPlayer();
         String itemId = event.getGameItemId();
 
@@ -279,7 +273,7 @@ public class PlayingPhase implements GamePhase {
         }
 
         //装弹/拆弹：仅 IN_BATTLE 参战玩家
-        PlayerStatus status = TeamManager.getInstance().getPlayerStatus(player.getUniqueId());
+        PlayerStatus status = ctx.getTeamManager().getPlayerStatus(player.getUniqueId());
         if(status == null || status.getState() != PlayerState.IN_BATTLE || !status.getTeam().isCombatant()) return;
 
         boolean isPlant;
@@ -295,7 +289,7 @@ public class PlayingPhase implements GamePhase {
             return;
         }
 
-        BombInteractionController.getInstance().tryStartBombProgress(player, isPlant);
+        ctx.getBombInteractionController().tryStartBombProgress(player, isPlant);
     }
 
     /**
@@ -304,15 +298,15 @@ public class PlayingPhase implements GamePhase {
      * 菜单句柄交给 {@link IntermissionController} 跟踪，供间歇期开始/结束时刷新该入口的可用状态。
      */
     private void openBattleMenu(Player player){
-        ChestGui gui = ChestGui.Builder.create()
+        ChestGui gui = ChestGui.Builder.create().gameItemKey(ctx.getInteractionManager().gameItemKey())
                 .title(Component.text("战斗菜单", NamedTextColor.GOLD).decorate(TextDecoration.BOLD))
                 .rows(3)
                 .build();
         gui.setSlot(PlayingItemFactory.BATTLE_MENU_SWITCH_ROLE_SLOT,
-                PlayingItemFactory.getInstance().createSwitchRoleMenuItem(
-                        IntermissionController.getInstance().isIntermissionActive()));
+                ctx.getPlayingItemFactory().createSwitchRoleMenuItem(
+                        ctx.getIntermissionController().isIntermissionActive()));
         gui.open(player);
-        IntermissionController.getInstance().trackBattleMenu(player, gui);
+        ctx.getIntermissionController().trackBattleMenu(player, gui);
     }
 
     // ==================== 事件订阅 ====================

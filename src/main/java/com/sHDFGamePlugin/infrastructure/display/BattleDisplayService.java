@@ -1,18 +1,20 @@
 package com.sHDFGamePlugin.infrastructure.display;
 
-import com.sHDFGamePlugin.core.GameContext;
 import com.sHDFGamePlugin.infrastructure.GameEventBus;
 import com.sHDFGamePlugin.infrastructure.event.RightClickGameItemEvent;
 import com.sHDFGamePlugin.infrastructure.item.GameItemRegistry;
 import io.papermc.paper.threadedregions.scheduler.ScheduledTask;
 import org.bukkit.Bukkit;
 import org.bukkit.entity.Player;
+import org.bukkit.plugin.java.JavaPlugin;
+import org.bukkit.scoreboard.Scoreboard;
 
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.Set;
 import java.util.UUID;
 import java.util.function.Function;
+import java.util.function.Supplier;
 
 /**
  * 战斗表现层门面：把 BossBar 总览/明细、战斗侧边栏、slot 8 指南针收成一个生命周期对象。
@@ -41,6 +43,8 @@ public final class BattleDisplayService {
     private final BattleSectorBarRenderer barRenderer;
     private final BattleSidebarRenderer sidebarRenderer;
     private final CompassItemFactory compassFactory;
+    private final JavaPlugin plugin;
+    private final GameItemRegistry gameItemRegistry;
 
     //已显示的玩家（UUID -> 用于取阵营/角色的在线 Player 由渲染时解析）
     private final Set<UUID> displayedPlayers = new LinkedHashSet<>();
@@ -53,24 +57,40 @@ public final class BattleDisplayService {
      * （工程内"快捷栏物品右键 → 事件总线"的统一模式）；
      * 集成方订阅该事件并判断 id 是否为 {@link CompassItemFactory#DEFAULT_ITEM_ID} 即可。
      * <p>构造时<b>不</b>注册任何 GameItem、<b>不</b>启动任何调度，需显式调 {@link #start()}。</p>
+     *
+     * @param plugin                 插件实例（刷新任务的调度宿主）
+     * @param sharedScoreboardSource 插件共用记分板的取值器（侧边栏清理时把玩家复位回它）
+     * @param gameItemRegistry       指南针 GameItem 的注册表（{@link #registeredCompassItemId()} 自检用）
      */
-    public BattleDisplayService() {
-        this(new BattleSectorBarRenderer(), new BattleSidebarRenderer(),
+    public BattleDisplayService(JavaPlugin plugin, Supplier<Scoreboard> sharedScoreboardSource,
+                                GameItemRegistry gameItemRegistry) {
+        this(plugin, new BattleSectorBarRenderer(), new BattleSidebarRenderer(sharedScoreboardSource),
                 CompassItemFactory.builder()
                         .rightClickHandler(event -> GameEventBus.publish(
                                 new RightClickGameItemEvent(event.getPlayer(), CompassItemFactory.DEFAULT_ITEM_ID)))
-                        .build());
+                        .gameItemRegistry(gameItemRegistry)
+                        .build(),
+                gameItemRegistry);
     }
 
-    public BattleDisplayService(BattleSectorBarRenderer barRenderer,
+    public BattleDisplayService(JavaPlugin plugin, Supplier<Scoreboard> sharedScoreboardSource,
+                                GameItemRegistry gameItemRegistry, CompassItemFactory compassFactory) {
+        this(plugin, new BattleSectorBarRenderer(), new BattleSidebarRenderer(sharedScoreboardSource),
+                compassFactory, gameItemRegistry);
+    }
+
+    public BattleDisplayService(JavaPlugin plugin, BattleSectorBarRenderer barRenderer,
                                 BattleSidebarRenderer sidebarRenderer,
-                                CompassItemFactory compassFactory) {
-        if(barRenderer == null || sidebarRenderer == null || compassFactory == null){
-            throw new IllegalArgumentException("renderers and compassFactory must not be null");
+                                CompassItemFactory compassFactory,
+                                GameItemRegistry gameItemRegistry) {
+        if(barRenderer == null || sidebarRenderer == null || compassFactory == null || gameItemRegistry == null){
+            throw new IllegalArgumentException("renderers, compassFactory and gameItemRegistry must not be null");
         }
+        this.plugin = plugin;
         this.barRenderer = barRenderer;
         this.sidebarRenderer = sidebarRenderer;
         this.compassFactory = compassFactory;
+        this.gameItemRegistry = gameItemRegistry;
     }
 
     public BattleSectorBarRenderer barRenderer() {
@@ -180,8 +200,8 @@ public final class BattleDisplayService {
         if(refreshTask != null){
             return;
         }
-        refreshTask = GameContext.getInstance().getPlugin().getServer().getGlobalRegionScheduler()
-                .runAtFixedRate(GameContext.getInstance().getPlugin(),
+        refreshTask = plugin.getServer().getGlobalRegionScheduler()
+                .runAtFixedRate(plugin,
                         scheduledTask -> {
                             if(refreshAction != null){
                                 refreshAction.run();
@@ -216,7 +236,7 @@ public final class BattleDisplayService {
 
     /** 自检：已注册的指南针 GameItem id（未注册返回 null） */
     public String registeredCompassItemId() {
-        if(GameItemRegistry.getGameItem(compassFactory.itemId()) == null){
+        if(gameItemRegistry.getGameItem(compassFactory.itemId()) == null){
             return null;
         }
         return compassFactory.itemId();

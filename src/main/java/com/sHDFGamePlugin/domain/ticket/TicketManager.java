@@ -4,23 +4,19 @@ import com.sHDFGamePlugin.infrastructure.GameEventBus;
 import com.sHDFGamePlugin.infrastructure.event.TicketDepletedEvent;
 
 /**
- * 票数管理（单例）：管理进攻方票数。
+ * 票数管理：管理进攻方票数。
  * <p>
  * 死亡扣票、炸弹爆炸加票；票数耗尽时发布 {@link TicketDepletedEvent} 结束对局。
+ * <p>
+ * 实例由 {@link com.sHDFGamePlugin.core.GameContext} 创建并持有（不再有静态单例）。
  */
 public class TicketManager {
-
-    private static final TicketManager INSTANCE = new TicketManager();
 
     private int currentTickets;
     private int maxTickets;
     private boolean initialized;
 
-    private TicketManager(){}
-
-    public static TicketManager getInstance(){
-        return INSTANCE;
-    }
+    public TicketManager(){}
 
     public void init(int initialTickets, int maxTickets){
         if(initialTickets <= 0) throw new IllegalArgumentException("Initial tickets must be greater than 0.");

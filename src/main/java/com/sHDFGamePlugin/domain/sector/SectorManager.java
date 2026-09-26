@@ -1,12 +1,12 @@
 package com.sHDFGamePlugin.domain.sector;
 
-import com.sHDFGamePlugin.core.GameContext;
 import com.sHDFGamePlugin.infrastructure.GameEventBus;
 import com.sHDFGamePlugin.infrastructure.config.BombConfig;
 import com.sHDFGamePlugin.infrastructure.event.BombDefusedEvent;
 import com.sHDFGamePlugin.infrastructure.event.BombExplodedEvent;
 import com.sHDFGamePlugin.infrastructure.event.BombPlantedEvent;
 import io.papermc.paper.threadedregions.scheduler.ScheduledTask;
+import org.bukkit.plugin.java.JavaPlugin;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -28,10 +28,12 @@ import java.util.function.Consumer;
  *   实现区域推进间隔——间歇期内新据点尚未开启，进攻方时限不计时。
  * <p>
  * 不处理玩家互动细节（站位、进度累积、打断检测），这些属于 PlayingPhase。
+ * <p>
+ * 实例由 {@link com.sHDFGamePlugin.core.GameContext} 创建并持有（不再有静态单例）。
  */
 public class SectorManager {
 
-    private static final SectorManager INSTANCE = new SectorManager();
+    private final JavaPlugin plugin;
 
     private List<Sector> sectors;
     private int currentIndex;
@@ -46,10 +48,8 @@ public class SectorManager {
     //区域推进间隔（tick）：当前据点被攻占 → 下一个据点正式开启的间歇期；<= 0 表示无间歇期（推进后立即开启）
     private int sectorAdvanceInterval;
 
-    private SectorManager(){}
-
-    public static SectorManager getInstance(){
-        return INSTANCE;
+    public SectorManager(JavaPlugin plugin){
+        this.plugin = plugin;
     }
 
     /** 设置区域推进间隔（tick，负值按 0 处理）；由阶段初始化时从 MapConfig 注入 */
@@ -208,7 +208,7 @@ public class SectorManager {
         if(current == null) return;
         if(currentTimeLimit != null && currentTimeLimit.isRunning()) return;
 
-        currentTimeLimit = new SectorTimeLimit(current);
+        currentTimeLimit = new SectorTimeLimit(plugin, current);
         currentTimeLimit.start();
     }
 
@@ -238,8 +238,8 @@ public class SectorManager {
 
     private void startBombFuse(ActiveBomb bomb){
         bomb.stopFuse();
-        ScheduledTask task = GameContext.getInstance().getPlugin().getServer().getGlobalRegionScheduler()
-                .runAtFixedRate(GameContext.getInstance().getPlugin(),
+        ScheduledTask task = plugin.getServer().getGlobalRegionScheduler()
+                .runAtFixedRate(plugin,
                         new Consumer<ScheduledTask>() {
                             @Override
                             public void accept(ScheduledTask scheduledTask) {

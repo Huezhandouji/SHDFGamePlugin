@@ -6,6 +6,7 @@ import com.sHDFGamePlugin.infrastructure.item.GameItemRegistry;
 import net.kyori.adventure.text.Component;
 import org.bukkit.Bukkit;
 import org.bukkit.Material;
+import org.bukkit.NamespacedKey;
 import org.bukkit.entity.Player;
 import org.bukkit.inventory.Inventory;
 import org.bukkit.inventory.ItemStack;
@@ -33,10 +34,12 @@ public class ChestGui {
 
     private final Inventory inventory;
     private final Consumer<Player> onClose;
+    private final NamespacedKey gameItemKey;
 
-    private ChestGui(Inventory inventory, Consumer<Player> onClose) {
+    private ChestGui(Inventory inventory, Consumer<Player> onClose, NamespacedKey gameItemKey) {
         this.inventory = inventory;
         this.onClose = onClose;
+        this.gameItemKey = gameItemKey;
     }
 
     public Inventory getInventory() {
@@ -68,11 +71,15 @@ public class ChestGui {
         inventory.setItem(slot, null);
     }
 
-    /** 刷新：把空槽重新填上占位物品（内容更新后调用） */
+    /**
+     * 刷新：把空槽重新填上占位物品（内容更新后调用）。
+     * <p>占位物品需要物品 id 的 PDC 键，因此本 GUI 必须由带 {@link Builder#gameItemKey(NamespacedKey)}
+     * 的构建器创建；未注入时占位物品退化为普通玻璃板（不写入 id）。</p>
+     */
     public void refresh() {
         for (int i = 0; i < inventory.getSize(); i++) {
             if (inventory.getItem(i) == null) {
-                inventory.setItem(i, createSlotHolder());
+                inventory.setItem(i, createSlotHolder(gameItemKey));
             }
         }
     }
@@ -115,11 +122,13 @@ public class ChestGui {
         OPEN_GUIS.remove(player);
     }
 
-    private static ItemStack createSlotHolder() {
+    private static ItemStack createSlotHolder(NamespacedKey gameItemKey) {
         ItemStack holder = new ItemStack(Material.LIGHT_GRAY_STAINED_GLASS_PANE);
         ItemMeta meta = holder.getItemMeta();
         meta.displayName(Component.empty());
-        meta = GameItem.applyIdOnItemMeta(GameItemRegistry.ItemId.UTIL_CHEST_GUI_SLOT_HOLDER, meta);
+        if(gameItemKey != null){
+            meta = GameItem.applyIdOnItemMeta(gameItemKey, GameItemRegistry.ItemId.UTIL_CHEST_GUI_SLOT_HOLDER, meta);
+        }
         holder.setItemMeta(meta);
         return holder;
     }
@@ -129,11 +138,18 @@ public class ChestGui {
         private int rows = 6;
         private final Map<Integer, ItemStack> items = new HashMap<>();
         private Consumer<Player> onClose;
+        private NamespacedKey gameItemKey;
 
         private Builder() {}
 
         public static Builder create() {
             return new Builder();
+        }
+
+        /** 物品 id 的 PDC 键（用于占位物品；由 {@code InteractionManager#gameItemKey()} 提供） */
+        public Builder gameItemKey(NamespacedKey gameItemKey) {
+            this.gameItemKey = gameItemKey;
+            return this;
         }
 
         public Builder title(Component title) {
@@ -167,7 +183,7 @@ public class ChestGui {
             for (Map.Entry<Integer, ItemStack> entry : items.entrySet()) {
                 inventory.setItem(entry.getKey(), entry.getValue());
             }
-            ChestGui gui = new ChestGui(inventory, onClose);
+            ChestGui gui = new ChestGui(inventory, onClose, gameItemKey);
             gui.refresh(); //空槽填充占位物品
             return gui;
         }

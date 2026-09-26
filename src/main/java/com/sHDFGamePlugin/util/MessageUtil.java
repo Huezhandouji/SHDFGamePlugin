@@ -1,13 +1,12 @@
 package com.sHDFGamePlugin.util;
 
-import com.sHDFGamePlugin.SHDFGamePlugin;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
 import net.kyori.adventure.text.format.TextDecoration;
 import org.bukkit.Bukkit;
 import org.bukkit.entity.Player;
 
-/** 消息工具：统一格式的聊天消息发送 */
+/** 消息工具：统一格式的聊天消息发送（无状态静态工具，不持有插件/世界引用） */
 public class MessageUtil {
 
     public static void sendMessageWithPrefix(Player player, Component message) {
@@ -22,7 +21,7 @@ public class MessageUtil {
     }
 
     public static void broadcastPrefixedMessage(Component message) {
-        SHDFGamePlugin.getInstance().getServer().broadcast(Component.text("SHDF>>", NamedTextColor.GRAY, TextDecoration.BOLD).append(Component.empty().decoration(TextDecoration.BOLD, false)
+        Bukkit.getServer().broadcast(Component.text("SHDF>>", NamedTextColor.GRAY, TextDecoration.BOLD).append(Component.empty().decoration(TextDecoration.BOLD, false)
                 .color(NamedTextColor.WHITE).append(message)));
     }
 }

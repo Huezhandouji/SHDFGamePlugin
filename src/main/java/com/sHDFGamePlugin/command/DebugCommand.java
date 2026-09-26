@@ -1,5 +1,6 @@
 package com.sHDFGamePlugin.command;
 
+import com.sHDFGamePlugin.core.GameContext;
 import com.sHDFGamePlugin.core.GameState;
 import com.sHDFGamePlugin.core.GameStateMachine;
 import com.sHDFGamePlugin.domain.sector.ActiveBomb;
@@ -56,6 +57,12 @@ import java.util.Locale;
  * </ol>
  */
 public class DebugCommand implements SubCommand {
+
+    private final GameContext ctx;
+
+    public DebugCommand(GameContext ctx) {
+        this.ctx = ctx;
+    }
 
     /** 查看类权限（未声明 → 默认仅 OP） */
     private static final String PERMISSION_VIEW = "shadowhunter.game.debug";
@@ -116,7 +123,7 @@ public class DebugCommand implements SubCommand {
     private void sectorInfo(CommandSender sender) {
         if (!requirePermission(sender, PERMISSION_VIEW) || !requirePlaying(sender)) return;
 
-        SectorManager sectorManager = SectorManager.getInstance();
+        SectorManager sectorManager = ctx.getSectorManager();
         Sector sector = sectorManager.getCurrentSector();
         if (sector == null) {
             replyError(sender, "当前没有已加载的据点 (maps.yml objective 未加载)。");
@@ -154,7 +161,7 @@ public class DebugCommand implements SubCommand {
     private void sectorNext(CommandSender sender) {
         if (!requirePermission(sender, PERMISSION_ADMIN) || !requirePlaying(sender)) return;
 
-        SectorManager sectorManager = SectorManager.getInstance();
+        SectorManager sectorManager = ctx.getSectorManager();
         if (sectorManager.getCurrentSector() == null) {
             replyError(sender, "当前没有已加载的据点，无法推进。");
             return;
@@ -187,7 +194,7 @@ public class DebugCommand implements SubCommand {
     private void sectorCapture(CommandSender sender) {
         if (!requirePermission(sender, PERMISSION_ADMIN) || !requirePlaying(sender)) return;
 
-        SectorManager sectorManager = SectorManager.getInstance();
+        SectorManager sectorManager = ctx.getSectorManager();
         Sector sector = sectorManager.getCurrentSector();
         if (sector == null) {
             replyError(sender, "当前没有已加载的据点，无法引爆。");
@@ -222,7 +229,7 @@ public class DebugCommand implements SubCommand {
     private void ticketInfo(CommandSender sender) {
         if (!requirePermission(sender, PERMISSION_VIEW) || !requirePlaying(sender)) return;
 
-        TicketManager ticketManager = TicketManager.getInstance();
+        TicketManager ticketManager = ctx.getTicketManager();
         sender.sendMessage(Component.text("[sg] 进攻方票数: " + ticketManager.getCurrentTickets()
                 + " / 上限 " + ticketManager.getMaxTickets()
                 + " (已初始化: " + ticketManager.isInitialized()
@@ -239,7 +246,7 @@ public class DebugCommand implements SubCommand {
         Integer target = parseAmount(sender, args[1]);
         if (target == null) return;
 
-        TicketManager ticketManager = TicketManager.getInstance();
+        TicketManager ticketManager = ctx.getTicketManager();
         if (!ticketManager.isInitialized()) {
             replyError(sender, "票数系统未初始化（当前不在有效对局中）。");
             return;
@@ -274,7 +281,7 @@ public class DebugCommand implements SubCommand {
         Integer amount = parseAmount(sender, args[1]);
         if (amount == null) return;
 
-        TicketManager ticketManager = TicketManager.getInstance();
+        TicketManager ticketManager = ctx.getTicketManager();
         if (!ticketManager.isInitialized()) {
             replyError(sender, "票数系统未初始化（当前不在有效对局中）。");
             return;
@@ -299,7 +306,7 @@ public class DebugCommand implements SubCommand {
     private void bombList(CommandSender sender) {
         if (!requirePermission(sender, PERMISSION_VIEW) || !requirePlaying(sender)) return;
 
-        List<ActiveBomb> bombs = SectorManager.getInstance().getActiveBombs();
+        List<ActiveBomb> bombs = ctx.getSectorManager().getActiveBombs();
         if (bombs.isEmpty()) {
             replyInfo(sender, "当前据点没有运行时炸弹。");
             return;
@@ -321,7 +328,7 @@ public class DebugCommand implements SubCommand {
             return;
         }
 
-        SectorManager sectorManager = SectorManager.getInstance();
+        SectorManager sectorManager = ctx.getSectorManager();
         Sector sector = sectorManager.getCurrentSector();
         if (sector == null) {
             replyError(sender, "当前没有已加载的据点。");
@@ -403,10 +410,10 @@ public class DebugCommand implements SubCommand {
     private void intermissionInfo(CommandSender sender) {
         if (!requirePermission(sender, PERMISSION_VIEW) || !requirePlaying(sender)) return;
 
-        IntermissionController intermission = IntermissionController.getInstance();
+        IntermissionController intermission = ctx.getIntermissionController();
         if (!intermission.isIntermissionActive()) {
             replyInfo(sender, "当前不在间歇期（区域推进间隔 "
-                    + SectorManager.getInstance().getSectorAdvanceInterval() + " tick）。");
+                    + ctx.getSectorManager().getSectorAdvanceInterval() + " tick）。");
             return;
         }
         sender.sendMessage(Component.text("[sg] 间歇期中: 剩余 " + intermission.getRemainingTicks() + " tick (约 "
@@ -417,7 +424,7 @@ public class DebugCommand implements SubCommand {
     private void intermissionSkip(CommandSender sender) {
         if (!requirePermission(sender, PERMISSION_ADMIN) || !requirePlaying(sender)) return;
 
-        IntermissionController intermission = IntermissionController.getInstance();
+        IntermissionController intermission = ctx.getIntermissionController();
         if (!intermission.isIntermissionActive()) {
             replyError(sender, "当前不在间歇期，无需跳过。");
             return;
@@ -466,7 +473,7 @@ public class DebugCommand implements SubCommand {
         }
 
         if (!requirePlaying(sender)) return;
-        if (MatchSessionState.getInstance().isMatchEnded()) {
+        if (ctx.getMatchSessionState().isMatchEnded()) {
             replyError(sender, "本局已结算 (matchEnded=true)，不再重复结束。");
             return;
         }
@@ -474,7 +481,7 @@ public class DebugCommand implements SubCommand {
         String reason = args.length > 2
                 ? String.join(" ", Arrays.copyOfRange(args, 2, args.length))
                 : "调试指令强制结束";
-        SectorProgressController.getInstance().endMatch(winner, reason);
+        ctx.getSectorProgressController().endMatch(winner, reason);
 
         replyOk(sender, "已调用 endMatch(" + winner.name() + ", \"" + reason
                 + "\")：matchEnded 已置位，下一 tick 切到 FINISHED（随后清理并踢人回 IDLE）。");
@@ -521,7 +528,7 @@ public class DebugCommand implements SubCommand {
 
     private List<String> activeBombIds() {
         List<String> ids = new ArrayList<>();
-        for (ActiveBomb bomb : SectorManager.getInstance().getActiveBombs()) {
+        for (ActiveBomb bomb : ctx.getSectorManager().getActiveBombs()) {
             ids.add(bomb.getId());
         }
         return ids;
@@ -542,7 +549,7 @@ public class DebugCommand implements SubCommand {
 
     /** 非 PLAYING 阶段一律拒绝并给出明确提示（不抛异常、不静默无效） */
     private boolean requirePlaying(CommandSender sender) {
-        GameState state = GameStateMachine.getInstance().getCurrentState();
+        GameState state = ctx.getGameStateMachine().getCurrentState();
         if (state == GameState.PLAYING) return true;
         replyError(sender, "当前不在对局阶段（PLAYING），无法执行调试指令。当前状态: "
                 + (state == null ? "未初始化" : state.name()));

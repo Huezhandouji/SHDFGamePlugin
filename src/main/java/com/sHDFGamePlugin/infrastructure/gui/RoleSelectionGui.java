@@ -10,6 +10,7 @@ import net.kyori.adventure.text.format.NamedTextColor;
 import net.kyori.adventure.text.format.TextDecoration;
 import org.bukkit.Bukkit;
 import org.bukkit.Material;
+import org.bukkit.NamespacedKey;
 import org.bukkit.enchantments.Enchantment;
 import org.bukkit.entity.Player;
 import org.bukkit.inventory.ItemFlag;
@@ -47,11 +48,20 @@ public final class RoleSelectionGui {
     private final String clearRoleButtonId;
     /** 是否允许点击选择角色：false = 只读展示（用屏障替换按钮图标，避免"看起来能点却点不了"） */
     private final boolean clickable;
+    /** 角色桥接（取角色图标/名称/描述）与队伍查询：由 {@link com.sHDFGamePlugin.core.GameContext} 注入 */
+    private final RoleBridge roleBridge;
+    private final TeamManager teamManager;
+    /** 物品 id 的 PDC 键（写入按钮物品） */
+    private final NamespacedKey gameItemKey;
 
-    private RoleSelectionGui(String roleButtonIdPrefix, String clearRoleButtonId, boolean clickable) {
+    private RoleSelectionGui(String roleButtonIdPrefix, String clearRoleButtonId, boolean clickable,
+                             RoleBridge roleBridge, TeamManager teamManager, NamespacedKey gameItemKey) {
         this.roleButtonIdPrefix = roleButtonIdPrefix;
         this.clearRoleButtonId = clearRoleButtonId;
         this.clickable = clickable;
+        this.roleBridge = roleBridge;
+        this.teamManager = teamManager;
+        this.gameItemKey = gameItemKey;
     }
 
     /**
@@ -60,9 +70,14 @@ public final class RoleSelectionGui {
      * @param roleButtonIdPrefix 角色按钮 GameItem id 前缀，完整 id 为 prefix + side + "_" + roleId
      * @param clearRoleButtonId  清除角色按钮的 GameItem id；传 null 则不显示清除按钮
      * @param clickable          true = 正常选角菜单；false = 只读展示（角色按钮显示为不可用的屏障图标）
+     * @param roleBridge         角色桥接（角色有效性/图标/名称/描述）
+     * @param teamManager        队伍查询（渲染"已选该角色的玩家名单"）
+     * @param gameItemKey        物品 id 的 PDC 键（由 {@code InteractionManager#gameItemKey()} 提供）
      */
-    public static RoleSelectionGui create(String roleButtonIdPrefix, String clearRoleButtonId, boolean clickable) {
-        return new RoleSelectionGui(roleButtonIdPrefix, clearRoleButtonId, clickable);
+    public static RoleSelectionGui create(String roleButtonIdPrefix, String clearRoleButtonId, boolean clickable,
+                                          RoleBridge roleBridge, TeamManager teamManager, NamespacedKey gameItemKey) {
+        return new RoleSelectionGui(roleButtonIdPrefix, clearRoleButtonId, clickable,
+                roleBridge, teamManager, gameItemKey);
     }
 
     /** 是否可点击选择角色 */
@@ -81,7 +96,6 @@ public final class RoleSelectionGui {
     public List<RoleButtonEntry> buildRoleButtons(ShdfTeam team, List<String> rolePool) {
         List<RoleButtonEntry> entries = new ArrayList<>();
         if(rolePool == null) return entries;
-        RoleBridge roleBridge = RoleBridge.getInstance();
         for(String roleId : rolePool){
             //只展示有效（已实现）角色，与注册逻辑一致
             if(!roleBridge.isValidRoleId(roleId)) continue;
@@ -101,8 +115,6 @@ public final class RoleSelectionGui {
 
     /** 构建单个角色按钮物品：名称=角色 DisplayName（缺失回退 roleId），Lore=已选该角色的玩家名单，有人选择时加附魔光效 */
     private ItemStack buildRoleButton(String roleId, String gameItemId, ShdfTeam team){
-        RoleBridge roleBridge = RoleBridge.getInstance();
-
         //RoleAPI 对不存在的角色返回 Material.AIR 而非 null，AIR 同样视为缺失
         Material icon = roleBridge.getRoleIcon(roleId);
         if(icon == null || icon == Material.AIR){
@@ -121,7 +133,7 @@ public final class RoleSelectionGui {
 
         //Lore：已选择该角色的玩家名单；有人选择时附加魔光效
         List<String> selectors = getRoleSelectors(team, roleId);
-        List<Component> lore = new ArrayList<>(RoleBridge.getInstance().getRoleDescription(roleId));
+        List<Component> lore = new ArrayList<>(roleBridge.getRoleDescription(roleId));
         if(selectors.isEmpty()){
             lore.add(Component.text("尚未有人选择", NamedTextColor.GRAY));
         }
@@ -135,7 +147,7 @@ public final class RoleSelectionGui {
         }
         meta.lore(lore);
 
-        meta = GameItem.applyIdOnItemMeta(gameItemId, meta);
+        meta = GameItem.applyIdOnItemMeta(gameItemKey, gameItemId, meta);
         button.setItemMeta(meta);
         return button;
     }
@@ -168,7 +180,7 @@ public final class RoleSelectionGui {
         ItemMeta meta = button.getItemMeta();
         meta.displayName(Component.text("清除已选角色", NamedTextColor.RED, TextDecoration.BOLD));
         meta.lore(List.of(Component.text("点击清除自己当前选择的角色", NamedTextColor.GRAY)));
-        meta = GameItem.applyIdOnItemMeta(clearRoleButtonId, meta);
+        meta = GameItem.applyIdOnItemMeta(gameItemKey, clearRoleButtonId, meta);
         button.setItemMeta(meta);
         return button;
     }
@@ -176,7 +188,7 @@ public final class RoleSelectionGui {
     /** 查询本队中已选择指定角色的在线玩家名单（以 PlayerStatus.selectedRoleId 为准） */
     private List<String> getRoleSelectors(ShdfTeam team, String roleId){
         List<String> names = new ArrayList<>();
-        for(PlayerStatus status : TeamManager.getInstance().getAllPlayerStatusesInTeam(team)){
+        for(PlayerStatus status : teamManager.getAllPlayerStatusesInTeam(team)){
             if(roleId.equals(status.getSelectedRoleId())){
                 Player player = Bukkit.getPlayer(status.getUuid());
                 if(player != null){
@@ -224,7 +236,10 @@ public final class RoleSelectionGui {
         ChestGui.Builder builder = ChestGui.Builder.create()
                 .title(Component.text("选择角色 - " + sideDisplayName,
                         NamedTextColor.YELLOW).decorate(TextDecoration.BOLD))
-                .rows(content.rows());
+                .rows(content.rows())
+                //空槽占位物品需要 PDC 键：否则占位玻璃板不带 game_item_id，InteractionManager
+                //不会取消对空槽的点击，玩家能把占位物品拖出（放入的物品在关菜单时一并丢失）
+                .gameItemKey(gameItemKey);
         int slot = 0;
         for(ItemStack item : content.roleItems()){
             builder.setSlot(slot++, item);
@@ -266,7 +281,7 @@ public final class RoleSelectionGui {
     /** 物品上的 GameItem id；空物品返回 null */
     public String getGameItemIdOf(ItemStack item){
         if(item == null || item.getType() == Material.AIR) return null;
-        return GameItem.getGameItemId(item);
+        return GameItem.getGameItemId(gameItemKey, item);
     }
 
     /** 判断物品是否为"清除角色"按钮 */

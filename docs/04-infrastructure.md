@@ -15,7 +15,7 @@
 
 ## config（配置）
 
-- `ConfigManager`（单例）：加载 `config.yml`（全局）与 `maps.yml`（地图）。
+- `ConfigManager`（实例，`GameContext` 持有；构造注入 `JavaPlugin`，`init()` 无参）：加载 `config.yml`（全局）与 `maps.yml`（地图）。
   - 单张地图出错 → 跳过该图并 `warning`；必要全局字段缺失 → 抛异常（插件启动失败 / reload 报错）。
   - 提供各字段查询：等待/选角配置、出生点（`getLobbySpawnpoint`、`getRoleSelection*Spawnpoint`、
     地图级 `getSpectatorSpawnpoint`）、世界（`getWaitingWorld`/`getRoleSelectionWorld`）、
@@ -42,7 +42,7 @@
   - 右键 100ms 去重、丢物品触发左键的屏蔽处理；
   - 同 id 重复注册会 warning 后覆盖（阶段重入正常）。
 - 组件历史：左键组件此前 TYPE 误抄为 right_click，已随 Class 键控修复。
-- 注意：`InteractionManager` 是单例 Listener，`onEnable` 注册一次。
+- 注意：`InteractionManager` 是实例 Listener（`GameContext` 持有），`onEnable` 注册一次、`GameContext#shutdown` 注销。
 
 ## gui（ChestGui）
 

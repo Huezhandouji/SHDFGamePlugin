@@ -1,26 +1,30 @@
 package com.sHDFGamePlugin.domain.sector;
 
 
-import com.sHDFGamePlugin.core.GameContext;
 import com.sHDFGamePlugin.infrastructure.GameEventBus;
 import com.sHDFGamePlugin.infrastructure.event.SectorTimeLimitExpiredEvent;
 import io.papermc.paper.threadedregions.scheduler.ScheduledTask;
+import org.bukkit.plugin.java.JavaPlugin;
 
 import java.util.function.Consumer;
 
 /**
  * 据点时限倒计时：激活据点时启动，每 tick 递减；
  * 归零时发布 {@link SectorTimeLimitExpiredEvent}（超时防守方胜）。
+ * <p>
+ * 插件实例由 {@link SectorManager} 在创建时注入（不再从全局上下文取）。
  */
 public class SectorTimeLimit {
 
+    private final JavaPlugin plugin;
     private final Sector sector;
     private final int totalTicks;
     private int remainingTicks;
     private boolean running;
     private ScheduledTask task;
 
-    public SectorTimeLimit(Sector sector) {
+    public SectorTimeLimit(JavaPlugin plugin, Sector sector) {
+        this.plugin = plugin;
         this.sector = sector;
         this.totalTicks = sector.getTimeLimit();
         if(totalTicks < 0){
@@ -36,8 +40,8 @@ public class SectorTimeLimit {
         if (running) return;
 
         running = true;
-        task = GameContext.getInstance().getPlugin().getServer().getGlobalRegionScheduler()
-        .runAtFixedRate(GameContext.getInstance().getPlugin(),
+        task = plugin.getServer().getGlobalRegionScheduler()
+        .runAtFixedRate(plugin,
                 new Consumer<ScheduledTask>() {
                     @Override
                     public void accept(ScheduledTask scheduledTask) {

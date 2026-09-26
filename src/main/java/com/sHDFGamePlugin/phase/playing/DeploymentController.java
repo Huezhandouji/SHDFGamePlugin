@@ -2,13 +2,11 @@ package com.sHDFGamePlugin.phase.playing;
 
 import com.sHDFGamePlugin.core.GameContext;
 import com.sHDFGamePlugin.domain.sector.Sector;
-import com.sHDFGamePlugin.domain.sector.SectorManager;
 import com.sHDFGamePlugin.domain.spawn.SpawnManager;
 import com.sHDFGamePlugin.domain.team.PlayerState;
 import com.sHDFGamePlugin.domain.team.PlayerStatus;
 import com.sHDFGamePlugin.domain.team.ShdfTeam;
 import com.sHDFGamePlugin.domain.team.TeamManager;
-import com.sHDFGamePlugin.infrastructure.RoleBridge;
 import com.sHDFGamePlugin.infrastructure.config.ConfigManager;
 import com.sHDFGamePlugin.infrastructure.config.MapConfig;
 import com.sHDFGamePlugin.infrastructure.regionNotation.CubeRegion;
@@ -52,15 +50,17 @@ import java.util.UUID;
  * </ul>
  * 共享状态集中在 {@link MatchSessionState}（任务句柄、监听器句柄、部署失败去重、死亡倒计时播报去重）。
  * 调用方：{@code PlayingPhase}（门面生命周期）、{@link DeathHandler}（死亡转入等待重生）。
+ * <p>
+ * 实例由 {@link GameContext} 创建并持有（不再有静态单例）。
  */
 public final class DeploymentController {
 
-    private static final DeploymentController INSTANCE = new DeploymentController();
+    private final GameContext ctx;
+    private final PlayingItemFactory playingItemFactory;
 
-    private DeploymentController() {}
-
-    public static DeploymentController getInstance() {
-        return INSTANCE;
+    public DeploymentController(GameContext ctx, PlayingItemFactory playingItemFactory) {
+        this.ctx = ctx;
+        this.playingItemFactory = playingItemFactory;
     }
 
     // ==================== 入场：全员等待重生 ====================
@@ -72,18 +72,18 @@ public final class DeploymentController {
      * 倒计时结束由 tick 驱动自动部署到本方出生区（见 {@link #autoDeployReadyPlayers()}）。
      */
     public void enterAwaitingRespawn(){
-        ConfigManager config = ConfigManager.getInstance();
+        ConfigManager config = ctx.getConfigManager();
         MapConfig mapConfig = config.getSelectedMapConfig();
         if(mapConfig == null) return;
 
         World world = Bukkit.getWorld(mapConfig.getWorld());
         if(world == null){
-            GameContext.getInstance().getPlugin().getLogger().warning("[PlayingPhase] 地图世界不存在, 玩家将停留在原地等待重生!");
+            ctx.getPlugin().getLogger().warning("[PlayingPhase] 地图世界不存在, 玩家将停留在原地等待重生!");
         }
         //等待部署的玩家与观战者的统一等待点：旁观者出生点
         Vector spectatorSpawn = config.getSpectatorSpawnpoint();
 
-        TeamManager teamManager = TeamManager.getInstance();
+        TeamManager teamManager = ctx.getTeamManager();
         for(Player player : Bukkit.getOnlinePlayers()){
             PlayerStatus status = teamManager.getPlayerStatus(player.getUniqueId());
             if(status == null) continue;
@@ -94,7 +94,7 @@ public final class DeploymentController {
                 setAwaitingLook(player);
                 //DEPLOYING + 进入重生队列（按地图配置的本方重生时间倒计时）
                 status.setState(PlayerState.DEPLOYING);
-                SpawnManager.getInstance().addPlayer(player.getUniqueId(), team);
+                ctx.getSpawnManager().addPlayer(player.getUniqueId(), team);
             }
             else{
                 //观战者：清空背包并保持观战模式
@@ -111,8 +111,8 @@ public final class DeploymentController {
     /** 设定"等待重生"表现：创造模式 + 无粒子永久隐身效果 + 不可碰撞 + 清空背包（保留战斗菜单） */
     public void setAwaitingLook(Player player){
         //清空背包但保留 slot 8 战斗菜单物品（战斗菜单在等待重生/死亡等状态下不被清除）
-        PlayingItemFactory.getInstance().clearInventoryKeepBattleMenu(player);
-        PlayingItemFactory.getInstance().giveBattleMenuItem(player);
+        playingItemFactory.clearInventoryKeepBattleMenu(player);
+        playingItemFactory.giveBattleMenuItem(player);
         player.setGameMode(GameMode.CREATIVE);
         //不使用实体隐身标志位：改挂无粒子永久隐身效果（部署/转观战时移除该效果即恢复可见）
         player.addPotionEffect(new PotionEffect(PotionEffectType.INVISIBILITY,
@@ -122,7 +122,7 @@ public final class DeploymentController {
 
     /** 是否处于"等待重生"状态（用于守卫拦截） */
     public boolean isAwaitingRespawn(Player player){
-        PlayerStatus status = TeamManager.getInstance().getPlayerStatus(player.getUniqueId());
+        PlayerStatus status = ctx.getTeamManager().getPlayerStatus(player.getUniqueId());
         return status != null && status.getState() == PlayerState.DEPLOYING;
     }
 
@@ -130,12 +130,12 @@ public final class DeploymentController {
 
     /** 启动每 tick 的重生驱动：递减重生队列，倒计时结束的玩家自动部署进场 */
     public void startRespawnTickTask(){
-        MatchSessionState state = MatchSessionState.getInstance();
-        ScheduledTask task = GameContext.getInstance().getPlugin().getServer().getGlobalRegionScheduler()
-                .runAtFixedRate(GameContext.getInstance().getPlugin(),
+        MatchSessionState state = ctx.getMatchSessionState();
+        ScheduledTask task = ctx.getPlugin().getServer().getGlobalRegionScheduler()
+                .runAtFixedRate(ctx.getPlugin(),
                         scheduledTask -> {
-                            if(MatchSessionState.getInstance().isMatchEnded()) return;
-                            SpawnManager.getInstance().update();
+                            if(ctx.getMatchSessionState().isMatchEnded()) return;
+                            ctx.getSpawnManager().update();
                             sendDeathCountdownMessages();
                             autoDeployReadyPlayers();
                         },
@@ -144,17 +144,17 @@ public final class DeploymentController {
     }
 
     public void stopRespawnTickTask(){
-        ScheduledTask respawnTickTask = MatchSessionState.getInstance().getRespawnTickTask();
+        ScheduledTask respawnTickTask = ctx.getMatchSessionState().getRespawnTickTask();
         if(respawnTickTask != null){
             respawnTickTask.cancel();
-            MatchSessionState.getInstance().setRespawnTickTask(null);
+            ctx.getMatchSessionState().setRespawnTickTask(null);
         }
     }
 
     /** 检测重生倒计时已结束的在线参战玩家，直接自动部署（无需点击物品） */
     public void autoDeployReadyPlayers(){
-        TeamManager teamManager = TeamManager.getInstance();
-        SpawnManager spawnManager = SpawnManager.getInstance();
+        TeamManager teamManager = ctx.getTeamManager();
+        SpawnManager spawnManager = ctx.getSpawnManager();
         for(Player player : Bukkit.getOnlinePlayers()){
             UUID uuid = player.getUniqueId();
             PlayerStatus status = teamManager.getPlayerStatus(uuid);
@@ -169,12 +169,12 @@ public final class DeploymentController {
     /** 自动部署：调用 SpawnManager.deployPlayer（传送出生区 + ADVENTURE + 应用角色 + IN_BATTLE） */
     public void autoDeploy(Player player, PlayerStatus status){
         UUID uuid = player.getUniqueId();
-        MatchSessionState state = MatchSessionState.getInstance();
-        boolean success = SpawnManager.getInstance().deployPlayer(uuid, status.getSelectedRoleId());
+        MatchSessionState state = ctx.getMatchSessionState();
+        boolean success = ctx.getSpawnManager().deployPlayer(uuid, status.getSelectedRoleId());
         if(!success){
             //部署失败（角色应用失败/世界缺失等）：留待下一 tick 重试，失败日志只记一次
             if(state.addDeployFailureLogged(uuid)){
-                GameContext.getInstance().getPlugin().getLogger().warning(
+                ctx.getPlugin().getLogger().warning(
                         "[PlayingPhase] 玩家 " + player.getName() + " 自动部署失败, 将每 tick 重试!");
             }
             return;
@@ -187,8 +187,8 @@ public final class DeploymentController {
         player.setCollidable(true);
         player.setHealth(player.getMaxHealth());
         player.setFoodLevel(20);
-        PlayingItemFactory.getInstance().giveBombInteractionItem(player, status.getTeam());
-        PlayingItemFactory.getInstance().giveBattleMenuItem(player);
+        playingItemFactory.giveBombInteractionItem(player, status.getTeam());
+        playingItemFactory.giveBattleMenuItem(player);
         MessageUtil.sendMessageWithPrefix(player, Component.text("已部署进场, 开始行动!", NamedTextColor.GREEN));
         SoundUtil.playNoticeSuccessCombinedSound(player);
     }
@@ -197,17 +197,17 @@ public final class DeploymentController {
 
     /** 对"死后等待重生"的玩家每秒播报一次重新部署倒计时（仅死亡玩家，开局等待不播报） */
     public void sendDeathCountdownMessages(){
-        MatchSessionState state = MatchSessionState.getInstance();
+        MatchSessionState state = ctx.getMatchSessionState();
         for(Player player : Bukkit.getOnlinePlayers()){
             UUID uuid = player.getUniqueId();
             if(!state.hasDeathCountdown(uuid)) continue;
 
-            PlayerStatus status = TeamManager.getInstance().getPlayerStatus(uuid);
+            PlayerStatus status = ctx.getTeamManager().getPlayerStatus(uuid);
             if(status == null || status.getState() != PlayerState.DEPLOYING || !status.getTeam().isCombatant()){
                 state.removeDeathCountdown(uuid);
                 continue;
             }
-            int remainingTicks = SpawnManager.getInstance().getRemainingRespawnTime(uuid);
+            int remainingTicks = ctx.getSpawnManager().getRemainingRespawnTime(uuid);
             int seconds = (int) Math.ceil(remainingTicks / 20.0);
             if(seconds <= 0) continue;
             if(Integer.valueOf(seconds).equals(state.getDeathCountdownSeconds(uuid))) continue;
@@ -219,7 +219,7 @@ public final class DeploymentController {
 
     /** 广播对局开始提示：以双方重生时间中较长者为"对局开始"倒计时（秒） */
     public void broadcastMatchStart(){
-        MapConfig mapConfig = ConfigManager.getInstance().getSelectedMapConfig();
+        MapConfig mapConfig = ctx.getConfigManager().getSelectedMapConfig();
         if(mapConfig == null) return;
         int maxTicks = Math.max(mapConfig.getAttackerRespawnTime(), mapConfig.getDefenderRespawnTime());
         int seconds = (int) Math.ceil(maxTicks / 20.0);
@@ -232,37 +232,43 @@ public final class DeploymentController {
     /** 等待重生期间禁止破坏/放置方块、禁止攻击（创造模式下玩家仍可破坏/攻击） */
     private static class AwaitingGuardListener implements Listener {
 
+        private final DeploymentController deploymentController;
+
+        AwaitingGuardListener(DeploymentController deploymentController) {
+            this.deploymentController = deploymentController;
+        }
+
         @EventHandler(ignoreCancelled = true)
         public void onBlockBreak(BlockBreakEvent event){
-            if(DeploymentController.getInstance().isAwaitingRespawn(event.getPlayer())){
+            if(deploymentController.isAwaitingRespawn(event.getPlayer())){
                 event.setCancelled(true);
             }
         }
 
         @EventHandler(ignoreCancelled = true)
         public void onBlockPlace(BlockPlaceEvent event){
-            if(DeploymentController.getInstance().isAwaitingRespawn(event.getPlayer())){
+            if(deploymentController.isAwaitingRespawn(event.getPlayer())){
                 event.setCancelled(true);
             }
         }
 
         @EventHandler(ignoreCancelled = true)
         public void onEntityDamageByEntity(EntityDamageByEntityEvent event){
-            if(event.getDamager() instanceof Player damager && DeploymentController.getInstance().isAwaitingRespawn(damager)){
+            if(event.getDamager() instanceof Player damager && deploymentController.isAwaitingRespawn(damager)){
                 event.setCancelled(true);
             }
         }
     }
 
     public void registerGuard(){
-        MatchSessionState state = MatchSessionState.getInstance();
-        Listener guardListener = new AwaitingGuardListener();
-        Bukkit.getPluginManager().registerEvents(guardListener, GameContext.getInstance().getPlugin());
+        MatchSessionState state = ctx.getMatchSessionState();
+        Listener guardListener = new AwaitingGuardListener(this);
+        Bukkit.getPluginManager().registerEvents(guardListener, ctx.getPlugin());
         state.setGuardListener(guardListener);
     }
 
     public void unregisterGuard(){
-        MatchSessionState state = MatchSessionState.getInstance();
+        MatchSessionState state = ctx.getMatchSessionState();
         Listener guardListener = state.getGuardListener();
         if(guardListener != null){
             for(HandlerList handlerList : HandlerList.getHandlerLists()){
@@ -281,8 +287,8 @@ public final class DeploymentController {
         player.removePotionEffect(PotionEffectType.INVISIBILITY);
         player.setCollidable(true);
 
-        ConfigManager config = ConfigManager.getInstance();
-        Sector sector = SectorManager.getInstance().getCurrentSector();
+        ConfigManager config = ctx.getConfigManager();
+        Sector sector = ctx.getSectorManager().getCurrentSector();
         World world = null;
         if(sector != null && config.getSelectedMapConfig() != null){
             world = Bukkit.getWorld(config.getSelectedMapConfig().getWorld());
@@ -298,8 +304,8 @@ public final class DeploymentController {
             player.teleport(spawnRegion.randomPoint().toLocation(world));
         }
         applyRole(player, status);
-        PlayingItemFactory.getInstance().giveBombInteractionItem(player, status.getTeam());
-        PlayingItemFactory.getInstance().giveBattleMenuItem(player);
+        playingItemFactory.giveBombInteractionItem(player, status.getTeam());
+        playingItemFactory.giveBattleMenuItem(player);
 
         MessageUtil.sendMessageWithPrefix(player, Component.text("欢迎回来, 你仍在对局中", NamedTextColor.GREEN));
     }
@@ -309,7 +315,7 @@ public final class DeploymentController {
         setAwaitingLook(player);
 
         //与观战者一致：在旁观者出生点等待部署（自动部署时才会传送至本方出生区）
-        ConfigManager config = ConfigManager.getInstance();
+        ConfigManager config = ctx.getConfigManager();
         MapConfig mapConfig = config.getSelectedMapConfig();
         if(mapConfig != null){
             World world = Bukkit.getWorld(mapConfig.getWorld());
@@ -320,7 +326,7 @@ public final class DeploymentController {
         }
 
         //重生倒计时可能已在其离线期间结束：直接自动部署
-        if(SpawnManager.getInstance().canRespawn(player.getUniqueId())){
+        if(ctx.getSpawnManager().canRespawn(player.getUniqueId())){
             autoDeploy(player, status);
             return;
         }
@@ -331,22 +337,22 @@ public final class DeploymentController {
     public void applyRole(Player player, PlayerStatus status){
         String roleId = status.getSelectedRoleId();
         if(roleId == null || roleId.isEmpty()) return;
-        if(!RoleBridge.getInstance().setPlayerRole(player.getUniqueId(), roleId)){
-            GameContext.getInstance().getPlugin().getLogger().warning(
+        if(!ctx.getRoleBridge().setPlayerRole(player.getUniqueId(), roleId)){
+            ctx.getPlugin().getLogger().warning(
                     "[PlayingPhase] 玩家 " + player.getName() + " 的角色应用失败: " + roleId);
         }
     }
 
     /** 转为观战者：传送至地图观战出生点 */
     public void makeSpectator(Player player){
-        ConfigManager configManager = ConfigManager.getInstance();
+        ConfigManager configManager = ctx.getConfigManager();
         if(configManager.getSelectedMapConfig() == null){
-            GameContext.getInstance().getPlugin().getLogger().warning("Selected map is null when a player joined in PlayingPhase!");
+            ctx.getPlugin().getLogger().warning("Selected map is null when a player joined in PlayingPhase!");
             return;
         }
         World world = Bukkit.getWorld(configManager.getSelectedMapConfig().getWorld());
         if(world == null){
-            GameContext.getInstance().getPlugin().getLogger().warning("World could not be found when a player joined in PlayingPhase! Player Kicked!");
+            ctx.getPlugin().getLogger().warning("World could not be found when a player joined in PlayingPhase! Player Kicked!");
             player.kick(Component.text("SHDF插件出现意外错误", NamedTextColor.RED, TextDecoration.BOLD));
             return;
         }
@@ -354,13 +360,13 @@ public final class DeploymentController {
         player.teleport(spawnLocation);
 
         UUID uuid = player.getUniqueId();
-        TeamManager teamManager = TeamManager.getInstance();
-        MatchSessionState state = MatchSessionState.getInstance();
+        TeamManager teamManager = ctx.getTeamManager();
+        MatchSessionState state = ctx.getMatchSessionState();
         //清理重生队列中的残留记录后，释放旧角色占用并按观战者重新注册
-        SpawnManager.getInstance().removePlayer(uuid);
+        ctx.getSpawnManager().removePlayer(uuid);
         state.removeDeployFailureLogged(uuid);
         state.removeDeathCountdown(uuid);
-        RoleBridge.getInstance().clearPlayerRole(uuid);
+        ctx.getRoleBridge().clearPlayerRole(uuid);
         teamManager.removePlayer(uuid);
         teamManager.addPlayer(uuid, ShdfTeam.SPECTATOR, PlayerState.IN_BATTLE);
 

@@ -2,15 +2,9 @@ package com.sHDFGamePlugin.phase;
 
 import com.sHDFGamePlugin.core.GameContext;
 import com.sHDFGamePlugin.core.GameState;
-import com.sHDFGamePlugin.core.GameStateMachine;
-import com.sHDFGamePlugin.domain.sector.SectorManager;
-import com.sHDFGamePlugin.domain.spawn.SpawnManager;
 import com.sHDFGamePlugin.domain.team.PlayerStatus;
 import com.sHDFGamePlugin.domain.team.ShdfTeam;
 import com.sHDFGamePlugin.domain.team.TeamManager;
-import com.sHDFGamePlugin.domain.ticket.TicketManager;
-import com.sHDFGamePlugin.infrastructure.DisconnectProtection;
-import com.sHDFGamePlugin.infrastructure.RoleBridge;
 import com.sHDFGamePlugin.infrastructure.config.ConfigManager;
 import com.sHDFGamePlugin.infrastructure.gui.ChestGui;
 import com.sHDFGamePlugin.phase.playing.MatchSessionState;
@@ -43,40 +37,40 @@ import java.util.UUID;
  * <p>
  * 延时任务句柄存于 {@link #cleanupTask}，{@link #onExit()} 必须取消它：本阶段可能在停留期内被异常切走
  * （例如服务器关服/外部 diagnostics 切状态），不取消会留下跨局双跑的任务——本工程反复出现的残留类问题。
+ * <p>
+ * 实例由 {@link GameContext} 创建并持有，本类没有静态单例。
  */
 public class FinishedPhase implements GamePhase {
 
-    private static final FinishedPhase INSTANCE = new FinishedPhase();
-
-    private FinishedPhase() {}
-
-    public static FinishedPhase getInstance() {
-        return INSTANCE;
-    }
+    private final GameContext ctx;
 
     /** 停留结束后的清理任务句柄；onExit 必须取消，防止跨局双跑/残留 */
     private ScheduledTask cleanupTask;
 
+    public FinishedPhase(GameContext ctx) {
+        this.ctx = ctx;
+    }
+
     @Override
     public void onEnter() {
-        GameContext.getInstance().getPlugin().getLogger().info("进入 FINISHED 状态, 开始结算展示...");
+        ctx.getPlugin().getLogger().info("进入 FINISHED 状态, 开始结算展示...");
 
         //1. 先在 TeamManager.reset() 之前取走本局战绩快照（reset 会清空 PlayerStatus，顺序不能反）
         List<MatchStat> stats = captureStats();
         //1.1 胜方与结束原因同样必须在 reset 之前捕获（胜方随 MatchSessionState 的 setMatchEnded(false) 跨局复位）
-        ShdfTeam winner = MatchSessionState.getInstance().getWinner();
-        String endReason = MatchSessionState.getInstance().getEndReason();
+        ShdfTeam winner = ctx.getMatchSessionState().getWinner();
+        String endReason = ctx.getMatchSessionState().getEndReason();
 
         //2. 聊天栏展示战绩（踢人前完成，玩家在停留期内能看到）
         broadcastStats(winner, endReason, stats);
 
         //3. 按配置停留后再清理+踢人（默认 200 tick = 10 秒）
-        int displayTicks = ConfigManager.getInstance().getFinishDisplayTime();
-        cleanupTask = GameContext.getInstance().getPlugin().getServer().getGlobalRegionScheduler()
-                .runDelayed(GameContext.getInstance().getPlugin(),
+        int displayTicks = ctx.getConfigManager().getFinishDisplayTime();
+        cleanupTask = ctx.getPlugin().getServer().getGlobalRegionScheduler()
+                .runDelayed(ctx.getPlugin(),
                         scheduledTask -> {
                             //守卫：停留期内状态可能已被别的路径切走，此时不再清理/踢人
-                            if(GameStateMachine.getInstance().getCurrentState() != GameState.FINISHED){
+                            if(ctx.getGameStateMachine().getCurrentState() != GameState.FINISHED){
                                 return;
                             }
                             finishAndReset();
@@ -109,7 +103,7 @@ public class FinishedPhase implements GamePhase {
      */
     private List<MatchStat> captureStats(){
         List<MatchStat> stats = new ArrayList<>();
-        for(PlayerStatus status : TeamManager.getInstance().getAllPlayerStatuses()){
+        for(PlayerStatus status : ctx.getTeamManager().getAllPlayerStatuses()){
             stats.add(new MatchStat(status.getUuid(), status.getTeam(),
                     status.getKills(), status.getDeaths(), status.getBombsPlanted(), status.getBombsDefused()));
         }
@@ -184,24 +178,24 @@ public class FinishedPhase implements GamePhase {
         //3. 重置完成后，将所有玩家踢出游戏
         kickAllPlayers();
         //4. 回到 IDLE，等待玩家重新加入开新局
-        GameStateMachine.getInstance().transitionTo(GameState.IDLE);
+        ctx.getGameStateMachine().transitionTo(GameState.IDLE);
     }
 
     /** 集中清理本局产生的所有系统状态 */
     private void resetSystemState(){
         //据点/炸弹：停止引信与据点时限任务
-        SectorManager.getInstance().cleanup();
+        ctx.getSectorManager().cleanup();
         //队伍/玩家状态：清空全部 PlayerStatus（含 selectedRoleId / state / 本局战绩）
-        TeamManager.getInstance().reset();
+        ctx.getTeamManager().reset();
         //重生队列
-        SpawnManager.getInstance().clearAll();
+        ctx.getSpawnManager().clearAll();
         //票数
-        TicketManager.getInstance().reset();
+        ctx.getTicketManager().reset();
         //角色占用记录清空，重复规则还原为配置默认值
-        RoleBridge.getInstance().clearAllOccupiedRoles();
-        RoleBridge.getInstance().setAllowDuplicateRoles(ConfigManager.getInstance().isAllowDuplicateRoles());
+        ctx.getRoleBridge().clearAllOccupiedRoles();
+        ctx.getRoleBridge().setAllowDuplicateRoles(ctx.getConfigManager().isAllowDuplicateRoles());
         //取消所有挂起的断线保护任务（防止残留回调跨局触发）
-        DisconnectProtection.getInstance().cancelAll();
+        ctx.getDisconnectProtection().cancelAll();
         //关闭所有打开的游戏 GUI
         ChestGui.closeAllGuis();
     }

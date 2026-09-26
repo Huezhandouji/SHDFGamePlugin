@@ -1,5 +1,6 @@
 package com.sHDFGamePlugin.phase.playing;
 
+import com.sHDFGamePlugin.core.GameContext;
 import com.sHDFGamePlugin.domain.sector.ActiveBomb;
 import com.sHDFGamePlugin.domain.sector.Sector;
 import com.sHDFGamePlugin.domain.sector.SectorManager;
@@ -10,16 +11,12 @@ import com.sHDFGamePlugin.domain.team.TeamManager;
 import com.sHDFGamePlugin.domain.ticket.TicketManager;
 import com.sHDFGamePlugin.infrastructure.GameEventBus;
 import com.sHDFGamePlugin.infrastructure.RoleBridge;
-import com.sHDFGamePlugin.infrastructure.config.ConfigManager;
 import com.sHDFGamePlugin.infrastructure.config.MapConfig;
 import com.sHDFGamePlugin.infrastructure.display.BattleBombInfo;
 import com.sHDFGamePlugin.infrastructure.display.BattleDisplayService;
 import com.sHDFGamePlugin.infrastructure.display.BattleDisplayState;
-import com.sHDFGamePlugin.infrastructure.display.BattleSectorBarRenderer;
 import com.sHDFGamePlugin.infrastructure.display.BattleSectorInfo;
-import com.sHDFGamePlugin.infrastructure.display.BattleSidebarRenderer;
 import com.sHDFGamePlugin.infrastructure.display.CompassItemFactory;
-import com.sHDFGamePlugin.infrastructure.event.RightClickGameItemEvent;
 import com.sHDFGamePlugin.util.MessageUtil;
 import com.sHDFGamePlugin.util.SoundUtil;
 import net.kyori.adventure.text.Component;
@@ -29,7 +26,6 @@ import org.bukkit.Bukkit;
 import org.bukkit.Sound;
 import org.bukkit.World;
 import org.bukkit.entity.Player;
-import org.bukkit.inventory.ItemStack;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -83,23 +79,24 @@ import java.util.List;
  */
 public final class MatchDisplayBridge {
 
-    private static final MatchDisplayBridge INSTANCE = new MatchDisplayBridge();
+    private final GameContext ctx;
 
-    private MatchDisplayBridge() {}
+    //表现层门面（display 包）：BossBar + 侧边栏 + 指南针（回调注入）
+    private final BattleDisplayService displayService;
 
-    public static MatchDisplayBridge getInstance() {
-        return INSTANCE;
+    /**
+     * @param compassFactory 指南针工厂（由 {@link GameContext} 统一创建，与 {@code PlayingItemFactory}
+     *                       共用同一个实例，物品 id 与回调因此保持一致）
+     * @param ctx            全局上下文（取插件、队伍、据点、票数、间歇期、角色桥接）
+     */
+    public MatchDisplayBridge(CompassItemFactory compassFactory, GameContext ctx) {
+        this.ctx = ctx;
+        this.displayService = new BattleDisplayService(
+                ctx.getPlugin(),
+                ctx::getTempScoreboard,
+                ctx.getGameItemRegistry(),
+                compassFactory);
     }
-
-    //表现层门面（display 包）：BossBar + 侧边栏 + 指南针（注入左键反馈回调）
-    private final BattleDisplayService displayService = new BattleDisplayService(
-            new BattleSectorBarRenderer(),
-            new BattleSidebarRenderer(),
-            CompassItemFactory.builder()
-                    .rightClickHandler(event -> GameEventBus.publish(
-                            new RightClickGameItemEvent(event.getPlayer(), CompassItemFactory.DEFAULT_ITEM_ID)))
-                    .leftClickListener(this::announceCompassTarget)
-                    .build());
 
     /** 指南针 GameItem id（供门面右键路由判断） */
     public String compassItemId() {
@@ -127,11 +124,6 @@ public final class MatchDisplayBridge {
      */
     public void stop() {
         displayService.stop();
-    }
-
-    /** 指南针物品（slot 8）：材质 COMPASS、不可丢弃/不可移动、左键切换指向、右键打开战斗菜单 */
-    public ItemStack createCompassItem() {
-        return displayService.compassFactory().createItem();
     }
 
     /**
@@ -189,7 +181,7 @@ public final class MatchDisplayBridge {
      * </ol>
      */
     private void refreshDisplay() {
-        if(MatchSessionState.getInstance().isMatchEnded()){
+        if(ctx.getMatchSessionState().isMatchEnded()){
             //对局已结束：摘掉表现层（FinishedPhase 会清理踢人，这里保证结束瞬间不残留）
             for(Player player : Bukkit.getOnlinePlayers()){
                 displayService.hide(player);
@@ -225,7 +217,7 @@ public final class MatchDisplayBridge {
 
     /** 是否应显示表现层：仍是参战阵营（含开局等待部署 / 死亡等待重生 / 断线重连等待） */
     private boolean isVisible(Player player) {
-        PlayerStatus status = TeamManager.getInstance().getPlayerStatus(player.getUniqueId());
+        PlayerStatus status = ctx.getTeamManager().getPlayerStatus(player.getUniqueId());
         return status != null && status.getTeam() != null && status.getTeam().isCombatant();
     }
 
@@ -233,8 +225,8 @@ public final class MatchDisplayBridge {
 
     /** 收集本帧全局数据：据点链 / 票数 / 时限剩余与总长 / 间歇期剩余 */
     private BattleDisplayState collectState() {
-        SectorManager sectorManager = SectorManager.getInstance();
-        TicketManager ticketManager = TicketManager.getInstance();
+        SectorManager sectorManager = ctx.getSectorManager();
+        TicketManager ticketManager = ctx.getTicketManager();
         Sector current = sectorManager.getCurrentSector();
 
         int remainingTicks = sectorManager.getCurrentTimeLimitRemaining();
@@ -252,7 +244,7 @@ public final class MatchDisplayBridge {
     }
 
     private int intermissionRemainingTicks() {
-        IntermissionController intermission = IntermissionController.getInstance();
+        IntermissionController intermission = ctx.getIntermissionController();
         if(!intermission.isIntermissionActive()){
             return 0;
         }
@@ -271,7 +263,7 @@ public final class MatchDisplayBridge {
      * 时 {@code currentIndex} 不变，因此开启瞬间只会从"名称(Ns)"切换为"名称 + 三态"，不会跳动到别的据点。
      */
     private List<BattleSectorInfo> buildSectorChain(SectorManager sectorManager, Sector current) {
-        MapConfig mapConfig = ConfigManager.getInstance().getSelectedMapConfig();
+        MapConfig mapConfig = ctx.getConfigManager().getSelectedMapConfig();
         List<Sector> sectors = mapConfig == null ? null : mapConfig.getSectors();
         if(sectors == null || sectors.isEmpty()){
             if(current == null){
@@ -346,7 +338,7 @@ public final class MatchDisplayBridge {
     }
 
     private World resolveWorld() {
-        MapConfig mapConfig = ConfigManager.getInstance().getSelectedMapConfig();
+        MapConfig mapConfig = ctx.getConfigManager().getSelectedMapConfig();
         if(mapConfig == null){
             return null;
         }
@@ -355,7 +347,7 @@ public final class MatchDisplayBridge {
 
     /** 玩家维度数据：我方阵营名 + 所持角色名（缺失时交渲染层显示中性占位） */
     private BattleDisplayState.PlayerView resolveView(Player player) {
-        PlayerStatus status = TeamManager.getInstance().getPlayerStatus(player.getUniqueId());
+        PlayerStatus status = ctx.getTeamManager().getPlayerStatus(player.getUniqueId());
         ShdfTeam team = status == null ? null : status.getTeam();
         String roleId = status == null ? null : status.getSelectedRoleId();
         return new BattleDisplayState.PlayerView(teamName(team), roleName(roleId));
@@ -379,13 +371,13 @@ public final class MatchDisplayBridge {
      * 角色显示名：经 {@link RoleBridge#getRoleDisplayName}（外部角色插件）；
      * 无效/缺失时回退到 roleId 文本或"未选择角色"，绝不抛异常打断对局。
      */
-    private static Component roleName(String roleId) {
+    private Component roleName(String roleId) {
         if(roleId == null || roleId.isEmpty()){
             //侧边栏去灰：缺省值用 YELLOW，与 BattleSidebarRenderer.renderLines 的缺省色一致
             return Component.text("未选择角色", NamedTextColor.YELLOW);
         }
         try{
-            RoleBridge roleBridge = RoleBridge.getInstance();
+            RoleBridge roleBridge = ctx.getRoleBridge();
             if(roleBridge.isValidRoleId(roleId)){
                 Component displayName = roleBridge.getRoleDisplayName(roleId);
                 if(displayName != null && !Component.empty().equals(displayName)){
@@ -401,8 +393,11 @@ public final class MatchDisplayBridge {
 
     // ==================== 指南针左键反馈 ====================
 
-    /** 左键切换指向后的玩家可见反馈：ActionBar 显示当前跟踪的炸弹名（无可用炸弹时给提示） */
-    private void announceCompassTarget(Player player, BattleBombInfo bomb) {
+    /**
+     * 左键切换指向后的玩家可见反馈：ActionBar 显示当前跟踪的炸弹名（无可用炸弹时给提示）。
+     * <p>由 {@link com.sHDFGamePlugin.core.GameContext} 在构造指南针工厂时注入的回调调用。</p>
+     */
+    public void announceCompassTarget(Player player, BattleBombInfo bomb) {
         if(player == null || !player.isOnline()){
             return;
         }

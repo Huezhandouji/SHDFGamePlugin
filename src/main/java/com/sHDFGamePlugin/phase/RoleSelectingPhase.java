@@ -1,17 +1,11 @@
 package com.sHDFGamePlugin.phase;
 
-import com.sHDFGamePlugin.SHDFGamePlugin;
 import com.sHDFGamePlugin.core.GameContext;
 import com.sHDFGamePlugin.core.GameState;
-import com.sHDFGamePlugin.core.GameStateMachine;
-import com.sHDFGamePlugin.domain.sector.SectorManager;
-import com.sHDFGamePlugin.domain.spawn.SpawnManager;
 import com.sHDFGamePlugin.domain.team.PlayerState;
 import com.sHDFGamePlugin.domain.team.PlayerStatus;
 import com.sHDFGamePlugin.domain.team.ShdfTeam;
 import com.sHDFGamePlugin.domain.team.TeamManager;
-import com.sHDFGamePlugin.domain.ticket.TicketManager;
-import com.sHDFGamePlugin.infrastructure.DisconnectProtection;
 import com.sHDFGamePlugin.infrastructure.GameEventBus;
 import com.sHDFGamePlugin.infrastructure.HashBiMap;
 import com.sHDFGamePlugin.infrastructure.RoleBridge;
@@ -23,11 +17,9 @@ import com.sHDFGamePlugin.infrastructure.event.ShdfPlayerQuitEvent;
 import com.sHDFGamePlugin.infrastructure.gui.ChestGui;
 import com.sHDFGamePlugin.infrastructure.gui.RoleSelectionGui;
 import com.sHDFGamePlugin.infrastructure.item.GameItem;
-import com.sHDFGamePlugin.infrastructure.item.GameItemRegistry;
 import com.sHDFGamePlugin.util.GameCountdown;
 import com.sHDFGamePlugin.util.MessageUtil;
 import com.sHDFGamePlugin.util.SoundUtil;
-import com.shadowHunterRolesPlugin.registry.RoleRegistry;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
 import net.kyori.adventure.text.format.TextDecoration;
@@ -59,12 +51,23 @@ import java.util.UUID;
  */
 public class RoleSelectingPhase implements GamePhase {
 
-    private RoleSelectingPhase(){}
+    private final GameContext ctx;
+    private final RoleSelectionGui roleSelectionGui;
 
-    private static final RoleSelectingPhase INSTANCE = new RoleSelectingPhase();
-    /** 获取单例实例 */
-    public static RoleSelectingPhase getInstance(){
-        return INSTANCE;
+    /**
+     * 实例由 {@link GameContext} 创建并持有（不再有静态单例）。
+     *
+     * @param roleSelectionGui 选角菜单渲染组件（按钮 id 前缀 {@code gameItem_roleSelectingPhase_role_}，
+     *                         清除按钮 {@code gameItem_roleSelectingPhase_clearRoleButton}，可点击）
+     */
+    public RoleSelectingPhase(GameContext ctx, RoleSelectionGui roleSelectionGui){
+        this.ctx = ctx;
+        this.roleSelectionGui = roleSelectionGui;
+    }
+
+    /** 物品 id 的 PDC 键（由插件实例派生，运行期取用） */
+    private NamespacedKey gameItemKey(){
+        return ctx.getInteractionManager().gameItemKey();
     }
 
     //GameItem id（阶段前缀风格）
@@ -83,9 +86,6 @@ public class RoleSelectingPhase implements GamePhase {
     //已注册的角色按钮（双向表：角色名 <-> 按钮 GameItem id，按阵营分表，点击校验以此为准）
     private final HashBiMap<String, String> registeredAttackerRoleButtonIds = new HashBiMap<>();
     private final HashBiMap<String, String> registeredDefenderRoleButtonIds = new HashBiMap<>();
-
-    //角色选择 GUI 组件（每次进入阶段新建一个，随阶段生命周期废弃；渲染逻辑见 infrastructure/gui/RoleSelectionGui）
-    private RoleSelectionGui roleSelectionGui;
 
     //侧边栏计分板
     private Objective sidebarObjective;
@@ -106,7 +106,7 @@ public class RoleSelectingPhase implements GamePhase {
      */
     @Override
     public void onEnter() {
-        TeamManager teamManager = TeamManager.getInstance();
+        TeamManager teamManager = ctx.getTeamManager();
 
         //1. 随机阵营玩家分到双方（此后参战人数定型）
         teamManager.autoAssignUnknownTeamPlayers();
@@ -115,11 +115,11 @@ public class RoleSelectingPhase implements GamePhase {
         loadAvailableRoleIds();
 
         //3. 把当前地图配置同步给角色桥接（角色池校验/占用记录以它为准）
-        RoleBridge.getInstance().setCurrentMapConfig(ConfigManager.getInstance().getSelectedMapConfig());
+        ctx.getRoleBridge().setCurrentMapConfig(ctx.getConfigManager().getSelectedMapConfig());
 
         //4. 重置本局角色状态：重复规则按配置还原、清空上一局占用记录
-        RoleBridge.getInstance().setAllowDuplicateRoles(ConfigManager.getInstance().isAllowDuplicateRoles());
-        RoleBridge.getInstance().clearAllOccupiedRoles();
+        ctx.getRoleBridge().setAllowDuplicateRoles(ctx.getConfigManager().isAllowDuplicateRoles());
+        ctx.getRoleBridge().clearAllOccupiedRoles();
 
         //5. 重复角色判定：任一队人数 > 角色数量 → 本局允许重复
         checkDuplicateRolesRule();
@@ -137,8 +137,7 @@ public class RoleSelectingPhase implements GamePhase {
             giveRoleSelectorItem(player, team);
         }
 
-        //7. 注册选择物品与角色按钮（GUI 渲染组件按本局重新创建，避免跨局残留回调/内容）
-        createRoleSelectionGui();
+        //7. 注册选择物品与角色按钮（GUI 渲染组件由 GameContext 构造并注入）
         registerRoleSelectorItems();
         registerRoleButtons();
 
@@ -174,7 +173,7 @@ public class RoleSelectingPhase implements GamePhase {
 
     /** 创建一个新的侧边栏计分板 */
     private void createSidebarObjective(){
-        sidebarObjective = SHDFGamePlugin.getInstance().getTempScoreboard().registerNewObjective("role_selecting_phase_sidebar", Criteria.DUMMY,
+        sidebarObjective = ctx.getTempScoreboard().registerNewObjective("role_selecting_phase_sidebar", Criteria.DUMMY,
                 Component.text("DECAYING FRONTLINE", NamedTextColor.GOLD, TextDecoration.BOLD));
         sidebarObjective.setDisplaySlot(DisplaySlot.SIDEBAR);
     }
@@ -182,7 +181,7 @@ public class RoleSelectingPhase implements GamePhase {
     /** 更新计分板 */
     @SuppressWarnings("deprecated")
     private void updateSidebarObjective(){
-        ConfigManager config = ConfigManager.getInstance();
+        ConfigManager config = ctx.getConfigManager();
         //重建侧边栏：先注销旧的（兼容跨阶段残留），再新建
         if(sidebarObjective != null){
             sidebarObjective.unregister();
@@ -192,7 +191,7 @@ public class RoleSelectingPhase implements GamePhase {
         sidebarObjective.getScore(ChatColor.BOLD + "角色选择阶段").setScore(-1);
         sidebarObjective.getScore(" ").setScore(-2);
 
-        if(RoleBridge.getInstance().isAllowDuplicateRoles()){
+        if(ctx.getRoleBridge().isAllowDuplicateRoles()){
             sidebarObjective.getScore("本场对局允许使用重复角色").setScore(-3);
         }
         else{
@@ -215,9 +214,9 @@ public class RoleSelectingPhase implements GamePhase {
 
     /** 从当前选中地图载入双方可用角色池；地图缺失时告警并保持空池 */
     private void loadAvailableRoleIds(){
-        ConfigManager config = ConfigManager.getInstance();
+        ConfigManager config = ctx.getConfigManager();
         if(config.getSelectedMapConfig() == null){
-            GameContext.getInstance().getPlugin().getLogger().warning("[RoleSelectingPhase] 未选择地图, 角色池为空!");
+            ctx.getPlugin().getLogger().warning("[RoleSelectingPhase] 未选择地图, 角色池为空!");
             return;
         }
         availableAttackerRoleIds = config.getSelectedMapConfig().getAttackerRoles();
@@ -226,8 +225,8 @@ public class RoleSelectingPhase implements GamePhase {
 
     /** 把双方在线玩家分别传送到本阶段（role_selection 世界）的阵营出生点 */
     private void teleportAllPlayersToSpawnpoint(){
-        TeamManager teamManager = TeamManager.getInstance();
-        ConfigManager config = ConfigManager.getInstance();
+        TeamManager teamManager = ctx.getTeamManager();
+        ConfigManager config = ctx.getConfigManager();
         World world = Bukkit.getWorld(config.getRoleSelectionWorld());
         if(world == null) return;
 
@@ -248,12 +247,12 @@ public class RoleSelectingPhase implements GamePhase {
 
     /** 任一队伍人数大于其角色数量 → 本局启用允许重复角色 */
     private void checkDuplicateRolesRule(){
-        TeamManager teamManager = TeamManager.getInstance();
+        TeamManager teamManager = ctx.getTeamManager();
         int attackers = teamManager.getPlayerPopulationOnTeam(ShdfTeam.ATTACKER);
         int defenders = teamManager.getPlayerPopulationOnTeam(ShdfTeam.DEFENDER);
         if(attackers > availableAttackerRoleIds.size() || defenders > availableDefenderRoleIds.size()){
-            RoleBridge.getInstance().setAllowDuplicateRoles(true);
-            GameContext.getInstance().getPlugin().getLogger().warning(
+            ctx.getRoleBridge().setAllowDuplicateRoles(true);
+            ctx.getPlugin().getLogger().warning(
                     "[RoleSelectingPhase] 任一队伍人数超过角色数量 (进攻 " + attackers + "/" + availableAttackerRoleIds.size()
                             + ", 防守 " + defenders + "/" + availableDefenderRoleIds.size() + "), 本局已启用允许重复角色!");
             MessageUtil.sendPrefixedMessageToAllPlayers(Component.text("由于有队伍人数超过已配置的角色数量, 本场对局将允许重复角色!", NamedTextColor.YELLOW, TextDecoration.BOLD));
@@ -273,35 +272,25 @@ public class RoleSelectingPhase implements GamePhase {
         ItemMeta meta = item.getItemMeta();
         meta.displayName(Component.text("选择角色", NamedTextColor.GOLD, TextDecoration.BOLD));
         meta.lore(List.of(Component.text("右键打开角色选择菜单", NamedTextColor.GRAY)));
-        meta = GameItem.applyIdOnItemMeta(itemId, meta);
+        meta = GameItem.applyIdOnItemMeta(gameItemKey(), itemId, meta);
         item.setItemMeta(meta);
         player.getInventory().setItem(0, item);
     }
 
     /** 注册两个"右键即发布 RightClickGameItemEvent"的角色选择物品 */
     private void registerRoleSelectorItems(){
-        GameItemRegistry.createAndRegister(attackerRoleSelectorId, builder -> {
+        ctx.getGameItemRegistry().createAndRegister(attackerRoleSelectorId, builder -> {
             builder.canMove(false).canDrop(false)
                     .rightClickHandler(event -> {
                         GameEventBus.publish(new RightClickGameItemEvent(event.getPlayer(), attackerRoleSelectorId));
                     });
         });
-        GameItemRegistry.createAndRegister(defenderRoleSelectorId, builder -> {
+        ctx.getGameItemRegistry().createAndRegister(defenderRoleSelectorId, builder -> {
             builder.canMove(false).canDrop(false)
                     .rightClickHandler(event -> {
                         GameEventBus.publish(new RightClickGameItemEvent(event.getPlayer(), defenderRoleSelectorId));
                     });
         });
-    }
-
-    /**
-     * 创建本局的角色选择 GUI 渲染组件。
-     * <p>
-     * 按钮 GameItem id 前缀沿用阶段命名约定（{@code gameItem_roleSelectingPhase_role_}），
-     * 保证与抽取前注册/反查的 id 完全一致；组件只负责渲染，不持有业务状态。
-     */
-    private void createRoleSelectionGui(){
-        roleSelectionGui = RoleSelectionGui.create(PREFIX + "role_", clearRoleButtonId, true);
     }
 
     /** 重新注册本局全部角色按钮（含"清除角色"按钮）：先清空两张双向注册表，再按队注册 */
@@ -315,7 +304,7 @@ public class RoleSelectingPhase implements GamePhase {
 
     /** 注册"清除角色"按钮（库存点击发布事件） */
     private void registerClearRoleButton(){
-        GameItemRegistry.createAndRegister(clearRoleButtonId, builder ->
+        ctx.getGameItemRegistry().createAndRegister(clearRoleButtonId, builder ->
                 builder.canDrop(false).canMove(false)
                         .inventoryClickHandler(event ->
                                 GameEventBus.publish(new InventoryClickGameItemEvent((Player) event.getWhoClicked(), clearRoleButtonId))));
@@ -327,7 +316,7 @@ public class RoleSelectingPhase implements GamePhase {
      * 键/值冲突则跳过，与抽取前的注册语义一致。
      */
     private void registerRoleButtonsForTeam(List<String> roleIds, ShdfTeam team){
-        RoleBridge roleBridge = RoleBridge.getInstance();
+        RoleBridge roleBridge = ctx.getRoleBridge();
         //按阵营选择对应的注册表
         HashBiMap<String, String> registeredMap;
         if(team == ShdfTeam.ATTACKER){
@@ -342,10 +331,10 @@ public class RoleSelectingPhase implements GamePhase {
             String gameItemId = roleSelectionGui.generateRoleButtonGameItemId(team, roleId);
             //记录: 角色名 -> 按钮 id；put 失败说明键/值冲突，跳过本次注册
             if(!registeredMap.put(roleId, gameItemId)){
-                GameContext.getInstance().getPlugin().getLogger().warning("[RoleSelectingPhase] 注册角色按钮冲突, 跳过: " + roleId + " -> " + gameItemId);
+                ctx.getPlugin().getLogger().warning("[RoleSelectingPhase] 注册角色按钮冲突, 跳过: " + roleId + " -> " + gameItemId);
                 continue;
             }
-            GameItemRegistry.createAndRegister(gameItemId, builder ->
+            ctx.getGameItemRegistry().createAndRegister(gameItemId, builder ->
                     builder.canDrop(false).canMove(false)
                             .inventoryClickHandler(event ->
                                     GameEventBus.publish(new InventoryClickGameItemEvent((Player) event.getWhoClicked(), gameItemId))));
@@ -357,12 +346,12 @@ public class RoleSelectingPhase implements GamePhase {
     /** 启动阶段倒计时：duration<=0 回退默认 600；内部 +1 补偿首 tick；30/20/10 秒里程碑播报，归零后执行收尾 */
     private void startCountdown(){
         //duration <= 0（未配置/写 0）时回退默认 600 tick；只跑倒计时，不做"手动选完"判定
-        int duration = ConfigManager.getInstance().getRoleSelectionDuration();
+        int duration = ctx.getConfigManager().getRoleSelectionDuration();
         if(duration <= 0){
             duration = DEFAULT_ROLE_SELECTION_DURATION;
         }
         //自动 +1 补偿首 tick，配置里无需自行加 1
-        countdown = new GameCountdown(GameContext.getInstance().getPlugin(), duration + 1);
+        countdown = new GameCountdown(ctx.getPlugin(), duration + 1);
         countdown.setOnTick(tick -> {
             //标题倒计时特效：仅在最后 10 秒（200 tick）内显示（与准备阶段一致）
             if(tick <= 200 && tick % 2 == 0){
@@ -407,33 +396,33 @@ public class RoleSelectingPhase implements GamePhase {
     private void finishRoleSelection(){
         //兜底：阶段结束时服务器已无玩家 → 重置游戏状态并回到 IDLE
         if(Bukkit.getOnlinePlayers().isEmpty()){
-            GameContext.getInstance().getPlugin().getLogger().info("[RoleSelectingPhase] 角色选择阶段结束时服务器已无玩家, 重置游戏状态并回到 IDLE");
+            ctx.getPlugin().getLogger().info("[RoleSelectingPhase] 角色选择阶段结束时服务器已无玩家, 重置游戏状态并回到 IDLE");
             resetGameState();
-            GameStateMachine.getInstance().transitionTo(GameState.IDLE);
+            ctx.getGameStateMachine().transitionTo(GameState.IDLE);
             return;
         }
 
         //为未选角色的参战玩家自动分配
         autoAssignRoles();
         //进入对局（入场部署：传送当前据点出生区 + 应用角色，由 PlayingPhase.onEnter 统一负责）
-        GameStateMachine.getInstance().transitionTo(GameState.PLAYING);
+        ctx.getGameStateMachine().transitionTo(GameState.PLAYING);
     }
 
     /** 无玩家场景下的游戏状态重置（与 FinishedPhase 清理保持一致） */
     private void resetGameState(){
         //据点/炸弹：停止引信与据点时限任务
-        SectorManager.getInstance().cleanup();
+        ctx.getSectorManager().cleanup();
         //队伍/玩家状态：清空全部 PlayerStatus
-        TeamManager.getInstance().reset();
+        ctx.getTeamManager().reset();
         //重生队列
-        SpawnManager.getInstance().clearAll();
+        ctx.getSpawnManager().clearAll();
         //票数
-        TicketManager.getInstance().reset();
+        ctx.getTicketManager().reset();
         //角色占用与重复规则还原
-        RoleBridge.getInstance().clearAllOccupiedRoles();
-        RoleBridge.getInstance().setAllowDuplicateRoles(ConfigManager.getInstance().isAllowDuplicateRoles());
+        ctx.getRoleBridge().clearAllOccupiedRoles();
+        ctx.getRoleBridge().setAllowDuplicateRoles(ctx.getConfigManager().isAllowDuplicateRoles());
         //取消挂起的断线保护任务
-        DisconnectProtection.getInstance().cancelAll();
+        ctx.getDisconnectProtection().cancelAll();
         //关闭所有打开的游戏 GUI
         ChestGui.closeAllGuis();
     }
@@ -447,20 +436,20 @@ public class RoleSelectingPhase implements GamePhase {
     /** 为单个阵营中未选角色的在线玩家随机分配（仅记录到 selectedRoleId，不应用角色）：允许重复→全池；禁止重复→未被本队选择的角色 */
     private void autoAssignRolesForTeam(ShdfTeam team, List<String> rolePool){
         Random random = new Random();
-        for(UUID uuid : TeamManager.getInstance().getAllPlayersUuidsInTeam(team)){
+        for(UUID uuid : ctx.getTeamManager().getAllPlayersUuidsInTeam(team)){
             if(Bukkit.getPlayer(uuid) == null) continue; //离线玩家不分配
-            PlayerStatus status = TeamManager.getInstance().getPlayerStatus(uuid);
+            PlayerStatus status = ctx.getTeamManager().getPlayerStatus(uuid);
             if(status == null || status.getSelectedRoleId() != null) continue;
 
             List<String> candidates = new ArrayList<>(rolePool);
-            if(!RoleBridge.getInstance().isAllowDuplicateRoles()){
+            if(!ctx.getRoleBridge().isAllowDuplicateRoles()){
                 //去掉本队已被选择的角色（基于 selectedRoleId，随循环分配实时更新）
                 candidates.removeAll(getSelectedRoleIds(team));
             }
             if(candidates.isEmpty()){
                 //防御性兜底：无空闲角色时强制全池随机并记录警告
                 candidates = new ArrayList<>(rolePool);
-                GameContext.getInstance().getPlugin().getLogger().warning("[RoleSelectingPhase] 自动分配时无空闲角色, 强制随机分配!");
+                ctx.getPlugin().getLogger().warning("[RoleSelectingPhase] 自动分配时无空闲角色, 强制随机分配!");
             }
             status.setSelectedRoleId(candidates.get(random.nextInt(candidates.size())));
         }
@@ -469,7 +458,7 @@ public class RoleSelectingPhase implements GamePhase {
     /** 本队当前已被选择的所有角色 id（基于 selectedRoleId） */
     private Set<String> getSelectedRoleIds(ShdfTeam team){
         Set<String> roleIds = new HashSet<>();
-        for(PlayerStatus status : TeamManager.getInstance().getAllPlayerStatusesInTeam(team)){
+        for(PlayerStatus status : ctx.getTeamManager().getAllPlayerStatusesInTeam(team)){
             if(status.getSelectedRoleId() != null){
                 roleIds.add(status.getSelectedRoleId());
             }
@@ -509,7 +498,7 @@ public class RoleSelectingPhase implements GamePhase {
      * 布局与按钮渲染由 {@link RoleSelectionGui} 统一负责（与刷新逻辑同源）。
      */
     private void openRoleSelectionGui(Player player){
-        TeamManager teamManager = TeamManager.getInstance();
+        TeamManager teamManager = ctx.getTeamManager();
         ShdfTeam team = teamManager.getTeam(player.getUniqueId());
         if(team == null || !team.isCombatant()) return;
 
@@ -535,7 +524,7 @@ public class RoleSelectingPhase implements GamePhase {
     /** 查询本队中已选择指定角色的在线玩家名单（以 PlayerStatus.selectedRoleId 为准） */
     private List<String> getRoleSelectors(ShdfTeam team, String roleId){
         List<String> names = new ArrayList<>();
-        for(PlayerStatus status : TeamManager.getInstance().getAllPlayerStatusesInTeam(team)){
+        for(PlayerStatus status : ctx.getTeamManager().getAllPlayerStatusesInTeam(team)){
             if(roleId.equals(status.getSelectedRoleId())){
                 Player player = Bukkit.getPlayer(status.getUuid());
                 if(player != null){
@@ -549,7 +538,7 @@ public class RoleSelectingPhase implements GamePhase {
     /** 清除玩家自己已选的角色：仅清空 selectedRoleId 记录（选角阶段不应用角色），播放失败音效并刷新菜单 */
     private void clearOwnRole(Player player){
         UUID uuid = player.getUniqueId();
-        TeamManager teamManager = TeamManager.getInstance();
+        TeamManager teamManager = ctx.getTeamManager();
         ShdfTeam team = teamManager.getTeam(uuid);
         if(team == null || !team.isCombatant()) return;
 
@@ -573,7 +562,7 @@ public class RoleSelectingPhase implements GamePhase {
     /** 玩家选角核心逻辑：校验参战身份 → 禁重复时检查是否已被本队其他玩家选择 → 仅记录 selectedRoleId（实际设置角色在对局阶段）→ 关闭 GUI → 刷新菜单 */
     private void selectRole(Player player, String roleId){
         UUID uuid = player.getUniqueId();
-        TeamManager teamManager = TeamManager.getInstance();
+        TeamManager teamManager = ctx.getTeamManager();
         ShdfTeam team = teamManager.getTeam(uuid);
         if(team == null || !team.isCombatant()){
             MessageUtil.sendMessageWithPrefix(player, Component.text("只有参战人员才能选择角色", NamedTextColor.GRAY));
@@ -581,7 +570,7 @@ public class RoleSelectingPhase implements GamePhase {
         }
 
         //禁用重复时：该角色已被本队其他玩家选择 → 拒绝
-        if(!RoleBridge.getInstance().isAllowDuplicateRoles() && isRoleSelectedByOthers(team, roleId, uuid)){
+        if(!ctx.getRoleBridge().isAllowDuplicateRoles() && isRoleSelectedByOthers(team, roleId, uuid)){
             MessageUtil.sendMessageWithPrefix(player, Component.text("该角色已被其他玩家选择", NamedTextColor.RED));
             //保持选角菜单打开，重新渲染各按钮的占用名单与光效
             refreshOpenRoleGuis();
@@ -604,7 +593,7 @@ public class RoleSelectingPhase implements GamePhase {
 
     /** 本队中是否有其他玩家已选择该角色（排除自己） */
     private boolean isRoleSelectedByOthers(ShdfTeam team, String roleId, UUID selfUuid){
-        for(PlayerStatus status : TeamManager.getInstance().getAllPlayerStatusesInTeam(team)){
+        for(PlayerStatus status : ctx.getTeamManager().getAllPlayerStatusesInTeam(team)){
             if(roleId.equals(status.getSelectedRoleId()) && !status.getUuid().equals(selfUuid)){
                 return true;
             }
@@ -617,7 +606,7 @@ public class RoleSelectingPhase implements GamePhase {
         for(Player player : Bukkit.getOnlinePlayers()){
             ChestGui gui = ChestGui.getOpenGui(player);
             if(gui == null) continue;
-            ShdfTeam team = TeamManager.getInstance().getTeam(player.getUniqueId());
+            ShdfTeam team = ctx.getTeamManager().getTeam(player.getUniqueId());
             if(team == null || !team.isCombatant()) continue;
 
             //只重建有效角色按钮（与打开 GUI 时一致），槽位数量不变，不会出现空槽
@@ -631,10 +620,10 @@ public class RoleSelectingPhase implements GamePhase {
     private void handlePlayerJoin(ShdfPlayerJoinEvent event){
         Player player = event.getPlayer();
         UUID uuid = player.getUniqueId();
-        TeamManager teamManager = TeamManager.getInstance();
+        TeamManager teamManager = ctx.getTeamManager();
 
         //玩家已上线，取消其挂起的断线保护任务
-        DisconnectProtection.getInstance().cancel(uuid);
+        ctx.getDisconnectProtection().cancel(uuid);
 
         PlayerStatus status = teamManager.getPlayerStatus(uuid);
         //断线重连：保留的 PlayerStatus 且状态为本阶段 → 恢复战斗身份
@@ -653,9 +642,9 @@ public class RoleSelectingPhase implements GamePhase {
         giveRoleSelectorItem(player, status.getTeam());
         player.setGameMode(GameMode.ADVENTURE);
         //恢复插件持有的计分板实例：断线重连后必须重新挂上，否则看不到选角侧边栏
-        player.setScoreboard(SHDFGamePlugin.getInstance().getTempScoreboard());
+        player.setScoreboard(ctx.getTempScoreboard());
 
-        ConfigManager config = ConfigManager.getInstance();
+        ConfigManager config = ctx.getConfigManager();
         World world = Bukkit.getWorld(config.getRoleSelectionWorld());
         if(world != null){
             Vector spawn;
@@ -674,14 +663,14 @@ public class RoleSelectingPhase implements GamePhase {
 
     /** 转为观战者：传送至地图观战出生点 */
     private void makeSpectator(Player player){
-        ConfigManager configManager = ConfigManager.getInstance();
+        ConfigManager configManager = ctx.getConfigManager();
         if(configManager.getSelectedMapConfig() == null){
-            GameContext.getInstance().getPlugin().getLogger().warning("Selected map is null when a player joined in RoleSelectingPhase!");
+            ctx.getPlugin().getLogger().warning("Selected map is null when a player joined in RoleSelectingPhase!");
             return;
         }
         World world = Bukkit.getWorld(configManager.getSelectedMapConfig().getWorld());
         if(world == null){
-            GameContext.getInstance().getPlugin().getLogger().warning("World could not be found when a player joined in RoleSelectingPhase! Player Kicked!");
+            ctx.getPlugin().getLogger().warning("World could not be found when a player joined in RoleSelectingPhase! Player Kicked!");
             player.kick(Component.text("SHDF插件出现意外错误", NamedTextColor.RED, TextDecoration.BOLD));
             return;
         }
@@ -689,14 +678,14 @@ public class RoleSelectingPhase implements GamePhase {
         player.teleport(spawnLocation);
 
         UUID uuid = player.getUniqueId();
-        TeamManager teamManager = TeamManager.getInstance();
+        TeamManager teamManager = ctx.getTeamManager();
         //释放旧角色占用后按观战者重新注册
-        RoleBridge.getInstance().clearPlayerRole(uuid);
+        ctx.getRoleBridge().clearPlayerRole(uuid);
         teamManager.removePlayer(uuid);
         teamManager.addPlayer(uuid, ShdfTeam.SPECTATOR, PlayerState.ROLE_SELECTING);
 
         //观战者也要用插件持有的计分板实例，否则侧边栏对它不可见
-        player.setScoreboard(SHDFGamePlugin.getInstance().getTempScoreboard());
+        player.setScoreboard(ctx.getTempScoreboard());
         MessageUtil.sendMessageWithPrefix(player, Component.text("你在对局中加入, 已经被自动设置为旁观者, 请等待对局结束"));
         player.getInventory().clear();
         player.setGameMode(GameMode.SPECTATOR);
@@ -709,12 +698,12 @@ public class RoleSelectingPhase implements GamePhase {
 
         //空服判定：除退出者外没有其他玩家在线（与 PlayingPhase 口径一致）
         if(isNoOtherPlayerOnline(quittingPlayer)){
-            GameStateMachine.getInstance().transitionTo(GameState.IDLE);
+            ctx.getGameStateMachine().transitionTo(GameState.IDLE);
             return;
         }
 
         //角色选择阶段退出：立即清除已选角色（释放角色槽位，重连后需重新选择）
-        PlayerStatus status = TeamManager.getInstance().getPlayerStatus(uuid);
+        PlayerStatus status = ctx.getTeamManager().getPlayerStatus(uuid);
         if(status != null){
             status.setSelectedRoleId(null);
         }
@@ -722,13 +711,12 @@ public class RoleSelectingPhase implements GamePhase {
         refreshOpenRoleGuis();
 
         //断线保护：保留 PlayerStatus 与阵营身份，超过重连时限仍未上线才移除记录
-        DisconnectProtection.getInstance().start(
-                GameContext.getInstance().getPlugin(),
+        ctx.getDisconnectProtection().start(
                 uuid,
-                ConfigManager.getInstance().getRoleSelectionReconnectTimeLimit(),
+                ctx.getConfigManager().getRoleSelectionReconnectTimeLimit(),
                 expiredUuid -> {
-                    TeamManager.getInstance().removePlayer(expiredUuid);
-                    RoleBridge.getInstance().clearPlayerRole(expiredUuid);
+                    ctx.getTeamManager().removePlayer(expiredUuid);
+                    ctx.getRoleBridge().clearPlayerRole(expiredUuid);
                 }
         );
     }

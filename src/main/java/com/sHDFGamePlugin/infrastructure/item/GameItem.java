@@ -1,12 +1,10 @@
 package com.sHDFGamePlugin.infrastructure.item;
 
-import com.sHDFGamePlugin.SHDFGamePlugin;
 import com.sHDFGamePlugin.infrastructure.item.component.InventoryClickComponent;
 import com.sHDFGamePlugin.infrastructure.item.component.ItemComponent;
 import com.sHDFGamePlugin.infrastructure.item.component.LeftClickComponent;
 import com.sHDFGamePlugin.infrastructure.item.component.RightClickComponent;
 import net.kyori.adventure.text.Component;
-import org.bukkit.Material;
 import org.bukkit.NamespacedKey;
 import org.bukkit.event.inventory.InventoryClickEvent;
 import org.bukkit.event.player.PlayerInteractEvent;
@@ -24,14 +22,14 @@ import java.util.function.Consumer;
  * 游戏物品逻辑对象（不持有 ItemStack）。
  * <p>
  * 以组件类型（Class）为键持有行为组件，同一类型只能有一个实例。
- * 通过 PDC 中的 {@link #GAME_ITEM_KEY} 与实体物品关联。
+ * 通过 PDC 中的 {@code game_item_id} 键与实体物品关联；该键由
+ * {@link InteractionManager#gameItemKey()} 依插件实例派生后传入，
+ * 避免在静态字段里引用尚未就绪的插件实例。
  */
 public class GameItem {
 
-    public static final NamespacedKey GAME_ITEM_KEY = new NamespacedKey(
-            SHDFGamePlugin.getInstance(),
-            "game_item_id"
-    );
+    /** PDC 键名（命名空间由插件实例提供） */
+    public static final String KEY_NAME = "game_item_id";
 
     private final Map<Class<? extends ItemComponent>, ItemComponent> components = new HashMap<>();
 
@@ -45,17 +43,17 @@ public class GameItem {
     }
 
 
-    public static ItemStack applyIdOnItemStack(String id, ItemStack baseItem){
+    public static ItemStack applyIdOnItemStack(NamespacedKey key, String id, ItemStack baseItem){
         ItemStack copy = baseItem.clone();
         ItemMeta meta = copy.getItemMeta();
-        meta.getPersistentDataContainer().set(GAME_ITEM_KEY, PersistentDataType.STRING, id);
+        meta.getPersistentDataContainer().set(key, PersistentDataType.STRING, id);
         copy.setItemMeta(meta);
         return copy;
     }
 
-    public static ItemMeta applyIdOnItemMeta(String id, ItemMeta baseMeta){
+    public static ItemMeta applyIdOnItemMeta(NamespacedKey key, String id, ItemMeta baseMeta){
         ItemMeta copy = baseMeta.clone();
-        copy.getPersistentDataContainer().set(GAME_ITEM_KEY, PersistentDataType.STRING, id);
+        copy.getPersistentDataContainer().set(key, PersistentDataType.STRING, id);
         return copy;
     }
 
@@ -114,15 +112,15 @@ public class GameItem {
         return id;
     }
 
-    public static boolean isGameItem(ItemMeta meta) {
-        return meta.getPersistentDataContainer().has(GAME_ITEM_KEY, PersistentDataType.STRING);
+    public static boolean isGameItem(NamespacedKey key, ItemMeta meta) {
+        return meta.getPersistentDataContainer().has(key, PersistentDataType.STRING);
     }
 
-    public static String getGameItemId(ItemMeta meta) {
-        return meta.getPersistentDataContainer().get(GAME_ITEM_KEY, PersistentDataType.STRING);
+    public static String getGameItemId(NamespacedKey key, ItemMeta meta) {
+        return meta.getPersistentDataContainer().get(key, PersistentDataType.STRING);
     }
-    public static String getGameItemId(ItemStack itemStack) {
-        return itemStack.getPersistentDataContainer().get(GAME_ITEM_KEY, PersistentDataType.STRING);
+    public static String getGameItemId(NamespacedKey key, ItemStack itemStack) {
+        return itemStack.getPersistentDataContainer().get(key, PersistentDataType.STRING);
     }
 
 

@@ -2,11 +2,9 @@ package com.sHDFGamePlugin.phase.playing;
 
 import com.sHDFGamePlugin.core.GameContext;
 import com.sHDFGamePlugin.core.GameState;
-import com.sHDFGamePlugin.core.GameStateMachine;
 import com.sHDFGamePlugin.domain.sector.Sector;
 import com.sHDFGamePlugin.domain.sector.SectorManager;
 import com.sHDFGamePlugin.domain.team.ShdfTeam;
-import com.sHDFGamePlugin.domain.ticket.TicketManager;
 import com.sHDFGamePlugin.infrastructure.GameEventBus;
 import com.sHDFGamePlugin.infrastructure.event.BombExplodedEvent;
 import com.sHDFGamePlugin.infrastructure.event.SectorTimeLimitExpiredEvent;
@@ -34,21 +32,21 @@ import net.kyori.adventure.text.format.TextDecoration;
  * <p>
  * 票数钳制（{@code increaseTicket} 上限 {@code maxTickets}、{@code decreaseTicket} 钳到 0）由
  * {@link TicketManager} 实现，本类不重复实现。
+ * <p>
+ * 实例由 {@link GameContext} 创建并持有，本类没有静态单例。
  */
 public final class SectorProgressController {
 
-    private static final SectorProgressController INSTANCE = new SectorProgressController();
-
-    private SectorProgressController() {}
-
-    public static SectorProgressController getInstance() {
-        return INSTANCE;
-    }
+    private final GameContext ctx;
 
     //事件订阅
     private GameEventBus.Subscription bombExplodedSubscription;
     private GameEventBus.Subscription ticketDepletedSubscription;
     private GameEventBus.Subscription sectorTimeLimitExpiredSubscription;
+
+    public SectorProgressController(GameContext ctx) {
+        this.ctx = ctx;
+    }
 
     /** 订阅对局闭环事件（由门面 onEnter 调用） */
     public void subscribe(){
@@ -84,9 +82,9 @@ public final class SectorProgressController {
      * 推进后不做全员重部署（已拍板）：只有之后新死亡的玩家才按新据点出生区部署。
      */
     private void handleBombExploded(BombExplodedEvent event){
-        if(MatchSessionState.getInstance().isMatchEnded()) return;
+        if(ctx.getMatchSessionState().isMatchEnded()) return;
 
-        SectorManager sectorManager = SectorManager.getInstance();
+        SectorManager sectorManager = ctx.getSectorManager();
         //陈旧事件防御：只有属于当前据点的炸弹爆炸才参与推进判定
         if(event.getSector() != sectorManager.getCurrentSector()) return;
         if(!sectorManager.isAllBombsExploded()) return;
@@ -102,7 +100,7 @@ public final class SectorProgressController {
                         .append(Component.text(" 已被攻占, 进攻方获得 " + ticketReward + " 票!", NamedTextColor.GOLD)));
 
         //加票（上限钳制由 TicketManager 实现）
-        TicketManager.getInstance().increaseTicket(ticketReward);
+        ctx.getTicketManager().increaseTicket(ticketReward);
 
         //推进到下一个据点（不做全员重部署）
         sectorManager.advanceToNextSector();
@@ -137,8 +135,8 @@ public final class SectorProgressController {
      * 陈旧事件（不属于当前据点）在本 tick 内立即忽略，不占用延后判定。
      */
     private void handleSectorTimeLimitExpired(SectorTimeLimitExpiredEvent event){
-        if(MatchSessionState.getInstance().isMatchEnded()) return;
-        if(event.getSector() != SectorManager.getInstance().getCurrentSector()) return;
+        if(ctx.getMatchSessionState().isMatchEnded()) return;
+        if(event.getSector() != ctx.getSectorManager().getCurrentSector()) return;
         deferDefenderVictory(ShdfTeam.DEFENDER, "据点时限到期, 进攻方未能攻占");
     }
 
@@ -162,11 +160,11 @@ public final class SectorProgressController {
      * 机制显著复杂化、收益仅限那 50ms 窗口。
      */
     private void deferDefenderVictory(ShdfTeam winner, String reason){
-        GameContext.getInstance().getPlugin().getServer().getGlobalRegionScheduler()
-                .run(GameContext.getInstance().getPlugin(),
+        ctx.getPlugin().getServer().getGlobalRegionScheduler()
+                .run(ctx.getPlugin(),
                         scheduledTask -> {
-                            if(GameStateMachine.getInstance().getCurrentState() == GameState.PLAYING
-                                    && !MatchSessionState.getInstance().isMatchEnded()){
+                            if(ctx.getGameStateMachine().getCurrentState() == GameState.PLAYING
+                                    && !ctx.getMatchSessionState().isMatchEnded()){
                                 endMatch(winner, reason);
                             }
                         });
@@ -190,14 +188,14 @@ public final class SectorProgressController {
      * 再进入 {@code FinishedPhase}（清理 + 踢人 + 回 IDLE），从而支持连续开局。
      */
     public void endMatch(ShdfTeam winner, String reason){
-        MatchSessionState state = MatchSessionState.getInstance();
+        MatchSessionState state = ctx.getMatchSessionState();
         if(state.isMatchEnded()) return;
         state.setMatchEnded(true);
         //同一处把胜方与结束原因落进共享状态：供结算阶段（FinishedPhase）明确报出胜方；
         //本行位于 matchEnded 早退守卫之后，因此同一局只写一次、重复触发不会覆盖。
         state.setMatchOutcome(winner, reason);
 
-        GameContext.getInstance().getPlugin().getLogger().info(
+        ctx.getPlugin().getLogger().info(
                 "[SectorProgressController] 对局结束, 胜方=" + teamDisplayName(winner)
                         + "(" + winner.name() + "), 原因=" + reason);
         MessageUtil.broadcastPrefixedMessage(Component.text(
@@ -226,12 +224,12 @@ public final class SectorProgressController {
         //下一 tick 再切状态：保证触发本方法的调用方（尤其是死亡流程）先完整收尾，避免清理后写入造成跨局残留
         //状态守卫：延后的一 tick 内状态可能已被别的路径切走（如最后一名玩家退出走空服清理回 IDLE，
         //或本局已被其它触发源结束）；此时不得再切 FINISHED，否则会把已离开 PLAYING 的状态机再拉回结算。
-        GameContext.getInstance().getPlugin().getServer().getGlobalRegionScheduler()
-                .run(GameContext.getInstance().getPlugin(),
+        ctx.getPlugin().getServer().getGlobalRegionScheduler()
+                .run(ctx.getPlugin(),
                         scheduledTask -> {
-                            if(GameStateMachine.getInstance().getCurrentState() == GameState.PLAYING
-                                    && MatchSessionState.getInstance().isMatchEnded()){
-                                GameStateMachine.getInstance().transitionTo(GameState.FINISHED);
+                            if(ctx.getGameStateMachine().getCurrentState() == GameState.PLAYING
+                                    && ctx.getMatchSessionState().isMatchEnded()){
+                                ctx.getGameStateMachine().transitionTo(GameState.FINISHED);
                             }
                         });
     }

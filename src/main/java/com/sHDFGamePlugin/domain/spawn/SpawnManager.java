@@ -1,6 +1,5 @@
 package com.sHDFGamePlugin.domain.spawn;
 
-import com.sHDFGamePlugin.core.GameContext;
 import com.sHDFGamePlugin.infrastructure.regionNotation.CubeRegion;
 import com.sHDFGamePlugin.domain.sector.Sector;
 import com.sHDFGamePlugin.domain.sector.SectorManager;
@@ -14,6 +13,7 @@ import org.bukkit.Bukkit;
 import org.bukkit.GameMode;
 import org.bukkit.World;
 import org.bukkit.entity.Player;
+import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.util.Vector;
 
 import java.util.HashMap;
@@ -21,13 +21,19 @@ import java.util.Map;
 import java.util.UUID;
 
 /**
- * 重生/部署管理（单例）：玩家死亡后加入重生队列等待倒计时，倒计时结束可部署进场。
+ * 重生/部署管理：玩家死亡后加入重生队列等待倒计时，倒计时结束可部署进场。
  * <p>
  * 部署时按当前据点的阵营出生区传送、恢复状态并应用角色。
+ * <p>
+ * 实例由 {@link com.sHDFGamePlugin.core.GameContext} 创建并持有（不再有静态单例）；
+ * 据点/队伍/角色桥接在构造时注入。
  */
 public class SpawnManager {
 
-    private static final SpawnManager INSTANCE = new SpawnManager();
+    private final JavaPlugin plugin;
+    private final SectorManager sectorManager;
+    private final TeamManager teamManager;
+    private final RoleBridge roleBridge;
 
     //重生队列
     private final Map<UUID, PendingRespawn> respawnQueue = new HashMap<>();
@@ -37,10 +43,11 @@ public class SpawnManager {
 
     private MapConfig currentMapConfig;
 
-    private SpawnManager() {}
-
-    public static SpawnManager getInstance() {
-        return INSTANCE;
+    public SpawnManager(JavaPlugin plugin, SectorManager sectorManager, TeamManager teamManager, RoleBridge roleBridge) {
+        this.plugin = plugin;
+        this.sectorManager = sectorManager;
+        this.teamManager = teamManager;
+        this.roleBridge = roleBridge;
     }
 
     //设置当前地图配置
@@ -58,7 +65,7 @@ public class SpawnManager {
             case ATTACKER -> waitTicks = currentMapConfig.getAttackerRespawnTime();
             case DEFENDER -> waitTicks = currentMapConfig.getDefenderRespawnTime();
             default -> {
-                GameContext.getInstance().getPlugin().getLogger().warning("[SpawnManager] Invalid ShdfTeam Type");
+                plugin.getLogger().warning("[SpawnManager] Invalid ShdfTeam Type");
                 return;
             }
         }
@@ -113,7 +120,7 @@ public class SpawnManager {
             return false;
         }
 
-        Sector currentSector = SectorManager.getInstance().getCurrentSector();
+        Sector currentSector = sectorManager.getCurrentSector();
         if(currentSector == null){
             logDeployFailure(uuid, "当前据点为 null(据点未加载或已全部攻占)");
             return false;
@@ -125,7 +132,7 @@ public class SpawnManager {
             return false;
         }
 
-        PlayerStatus status = TeamManager.getInstance().getPlayerStatus(uuid);
+        PlayerStatus status = teamManager.getPlayerStatus(uuid);
         if(status == null){
             logDeployFailure(uuid, "缺少 PlayerStatus(玩家不在队伍/状态已过期)");
             return false;
@@ -133,7 +140,7 @@ public class SpawnManager {
 
         //先应用角色：失败则不部署（保持 DEPLOYING），由 PlayingPhase 下个 tick 重试
         //（RoleBridge.setPlayerRole 内部对每个失败分支另有可区分原因日志）
-        boolean roleApplied = RoleBridge.getInstance().setPlayerRole(uuid, roleId);
+        boolean roleApplied = roleBridge.setPlayerRole(uuid, roleId);
         if(!roleApplied){
             logDeployFailure(uuid, "角色应用失败: roleId=" + roleId);
             return false;
@@ -171,7 +178,7 @@ public class SpawnManager {
 
         Player player = Bukkit.getPlayer(uuid);
         String playerName = player != null ? player.getName() : "unknown";
-        GameContext.getInstance().getPlugin().getLogger().warning(
+        plugin.getLogger().warning(
                 "[SpawnManager] 玩家 " + playerName + " (" + uuid + ") 部署失败: " + reason);
     }
 

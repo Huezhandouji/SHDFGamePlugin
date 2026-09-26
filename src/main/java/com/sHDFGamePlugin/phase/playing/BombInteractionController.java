@@ -7,9 +7,7 @@ import com.sHDFGamePlugin.domain.sector.SectorManager;
 import com.sHDFGamePlugin.domain.team.PlayerState;
 import com.sHDFGamePlugin.domain.team.PlayerStatus;
 import com.sHDFGamePlugin.domain.team.ShdfTeam;
-import com.sHDFGamePlugin.domain.team.TeamManager;
 import com.sHDFGamePlugin.infrastructure.GameEventBus;
-import com.sHDFGamePlugin.infrastructure.config.ConfigManager;
 import com.sHDFGamePlugin.infrastructure.config.MapConfig;
 import com.sHDFGamePlugin.infrastructure.event.BombExplodedEvent;
 import com.sHDFGamePlugin.infrastructure.regionNotation.CubeRegion;
@@ -46,28 +44,28 @@ import java.util.UUID;
  * <p>
  * 共享状态：进度表存于 {@link MatchSessionState#getActiveProgresses()}；任务与监听器句柄存于
  * {@link MatchSessionState}，由 {@code PlayingPhase.onEnter/onExit} 随阶段注册/注销。
+ * <p>
+ * 实例由 {@link GameContext} 创建并持有（不再有静态单例）。
  */
 public final class BombInteractionController {
 
-    private static final BombInteractionController INSTANCE = new BombInteractionController();
+    private final GameContext ctx;
 
-    private BombInteractionController() {}
-
-    public static BombInteractionController getInstance() {
-        return INSTANCE;
+    public BombInteractionController(GameContext ctx) {
+        this.ctx = ctx;
     }
 
     /** 尝试开始装弹/拆弹：定位范围内的炸弹并校验其状态，通过则挂起进度；已有进度时再次右键 = 取消 */
     public void tryStartBombProgress(Player player, boolean isPlant){
         UUID uuid = player.getUniqueId();
         //已有进行中的操作：再次使用对应物品取消操作
-        if(MatchSessionState.getInstance().getActiveProgresses().containsKey(uuid)){
+        if(ctx.getMatchSessionState().getActiveProgresses().containsKey(uuid)){
             cancelActiveProgress(player);
             return;
         }
 
         //间歇期内新据点尚未开启：炸弹不可交互（与"进行中的读条被打断"共同构成本机制的门闩）
-        if(IntermissionController.getInstance().isIntermissionActive()){
+        if(ctx.getIntermissionController().isIntermissionActive()){
             MessageUtil.sendMessageWithPrefix(player,
                     Component.text("新据点尚未开启, 暂时无法安放/拆除炸弹", NamedTextColor.RED));
             return;
@@ -98,7 +96,7 @@ public final class BombInteractionController {
 
     /** 主动取消进行中的装弹/拆弹（再次右键对应物品触发），移除进度后移动冻结自动解除 */
     public void cancelActiveProgress(Player player){
-        BombProgress existing = MatchSessionState.getInstance().getActiveProgresses().remove(player.getUniqueId());
+        BombProgress existing = ctx.getMatchSessionState().getActiveProgresses().remove(player.getUniqueId());
         if(existing == null) return;
         String action = existing.isPlant ? "装弹" : "拆弹";
         MessageUtil.sendMessageWithPrefix(player, Component.text(action + "已取消", NamedTextColor.GRAY));
@@ -108,7 +106,7 @@ public final class BombInteractionController {
     /** 找到玩家当前所处的炸弹（区域包含玩家位置） */
     private ActiveBomb findBombInRange(Player player){
         Vector playerPos = player.getLocation().toVector();
-        for(ActiveBomb bomb : SectorManager.getInstance().getActiveBombs()){
+        for(ActiveBomb bomb : ctx.getSectorManager().getActiveBombs()){
             if(bomb.getConfig().getRegion().contains(playerPos)){
                 return bomb;
             }
@@ -118,7 +116,7 @@ public final class BombInteractionController {
 
     private void startBombProgress(Player player, String bombId, boolean isPlant, int totalTicks){
         UUID uuid = player.getUniqueId();
-        MatchSessionState.getInstance().getActiveProgresses()
+        ctx.getMatchSessionState().getActiveProgresses()
                 .put(uuid, new BombProgress(uuid, bombId, isPlant, totalTicks, player));
         String action = isPlant ? "装弹" : "拆弹";
         MessageUtil.sendMessageWithPrefix(player, Component.text("开始" + action + ", 保持站立并留在范围内", NamedTextColor.YELLOW));
@@ -126,23 +124,23 @@ public final class BombInteractionController {
     }
 
     public void startBombProgressTickTask(){
-        ScheduledTask task = GameContext.getInstance().getPlugin().getServer().getGlobalRegionScheduler()
-                .runAtFixedRate(GameContext.getInstance().getPlugin(),
+        ScheduledTask task = ctx.getPlugin().getServer().getGlobalRegionScheduler()
+                .runAtFixedRate(ctx.getPlugin(),
                         scheduledTask -> tickBombProgresses(),
                         1L, 1L);
-        MatchSessionState.getInstance().setBombProgressTickTask(task);
+        ctx.getMatchSessionState().setBombProgressTickTask(task);
     }
 
     public void stopBombProgressTickTask(){
-        ScheduledTask bombProgressTickTask = MatchSessionState.getInstance().getBombProgressTickTask();
+        ScheduledTask bombProgressTickTask = ctx.getMatchSessionState().getBombProgressTickTask();
         if(bombProgressTickTask != null){
             bombProgressTickTask.cancel();
-            MatchSessionState.getInstance().setBombProgressTickTask(null);
+            ctx.getMatchSessionState().setBombProgressTickTask(null);
         }
     }
 
     private void tickBombProgresses(){
-        MatchSessionState state = MatchSessionState.getInstance();
+        MatchSessionState state = ctx.getMatchSessionState();
         if(state.getActiveProgresses().isEmpty()) return;
         for(UUID uuid : new ArrayList<>(state.getActiveProgresses().keySet())){
             BombProgress progress = state.getActiveProgresses().get(uuid);
@@ -170,16 +168,16 @@ public final class BombInteractionController {
 
     /** 进度是否仍有效：在线参战、阵营匹配、仍在同一炸弹范围、炸弹状态未变、未受伤（移动由冻结守卫阻止） */
     private boolean isBombProgressValid(Player player, BombProgress progress){
-        if(MatchSessionState.getInstance().isMatchEnded()) return false;
+        if(ctx.getMatchSessionState().isMatchEnded()) return false;
         //间歇期内新据点尚未开启：进行中的读条同样失效（会被 cancelBombProgress 打断并给出反馈）
-        if(IntermissionController.getInstance().isIntermissionActive()) return false;
+        if(ctx.getIntermissionController().isIntermissionActive()) return false;
 
-        PlayerStatus status = TeamManager.getInstance().getPlayerStatus(player.getUniqueId());
+        PlayerStatus status = ctx.getTeamManager().getPlayerStatus(player.getUniqueId());
         if(status == null || status.getState() != PlayerState.IN_BATTLE || !status.getTeam().isCombatant()) return false;
         if(progress.isPlant && status.getTeam() != ShdfTeam.ATTACKER) return false;
         if(!progress.isPlant && status.getTeam() != ShdfTeam.DEFENDER) return false;
 
-        ActiveBomb bomb = SectorManager.getInstance().getActiveBomb(progress.bombId);
+        ActiveBomb bomb = ctx.getSectorManager().getActiveBomb(progress.bombId);
         if(bomb == null) return false;
         if(!bomb.getConfig().getRegion().contains(player.getLocation().toVector())) return false;
         if(progress.isPlant){
@@ -201,7 +199,7 @@ public final class BombInteractionController {
     }
 
     private void cancelBombProgress(UUID uuid, Player player, BombProgress progress){
-        MatchSessionState.getInstance().getActiveProgresses().remove(uuid);
+        ctx.getMatchSessionState().getActiveProgresses().remove(uuid);
         if(player.isOnline()){
             String action = progress.isPlant ? "装弹" : "拆弹";
             MessageUtil.sendMessageWithPrefix(player, Component.text(action + "被打断", NamedTextColor.RED));
@@ -210,19 +208,19 @@ public final class BombInteractionController {
     }
 
     private void completeBombProgress(Player player, BombProgress progress){
-        MatchSessionState.getInstance().getActiveProgresses().remove(progress.uuid);
+        ctx.getMatchSessionState().getActiveProgresses().remove(progress.uuid);
 
         boolean success;
         if(progress.isPlant){
-            success = SectorManager.getInstance().onBombPlantSuccess(progress.bombId);
+            success = ctx.getSectorManager().onBombPlantSuccess(progress.bombId);
         }
         else{
-            success = SectorManager.getInstance().onBombDefuseSuccess(progress.bombId);
+            success = ctx.getSectorManager().onBombDefuseSuccess(progress.bombId);
         }
 
         if(success){
             //本局战绩：安放/拆除成功计入对应玩家的内存态统计（失败不计）
-            PlayerStatus actorStatus = TeamManager.getInstance().getPlayerStatus(player.getUniqueId());
+            PlayerStatus actorStatus = ctx.getTeamManager().getPlayerStatus(player.getUniqueId());
             if(actorStatus != null){
                 if(progress.isPlant){
                     actorStatus.addBombPlanted();
@@ -251,20 +249,25 @@ public final class BombInteractionController {
     /** 装弹/拆弹进行期间冻结玩家位置移动（保留视角转动），进度移除后自动恢复移动 */
     private static class BombProgressFreezeListener implements Listener {
 
+        private final MatchSessionState matchSessionState;
+
+        BombProgressFreezeListener(MatchSessionState matchSessionState) {
+            this.matchSessionState = matchSessionState;
+        }
+
         @EventHandler(ignoreCancelled = true)
         public void onPlayerMove(PlayerMoveEvent event){
             UUID uuid = event.getPlayer().getUniqueId();
-            if(!MatchSessionState.getInstance().getActiveProgresses().containsKey(uuid)) return;
+            if(!matchSessionState.getActiveProgresses().containsKey(uuid)) return;
 
             Location from = event.getFrom();
             Location to = event.getTo();
             if(to == null) return;
 
             //仅冻结位置变化（x/y/z），保留 yaw/pitch 视角转动
-            if(from.getX() != to.getX() || from.getY() != to.getY() || from.getZ() != to.getZ()){
+            if(from.getX() != to.getX() || from.getZ() != to.getZ()){
                 Location frozen = to.clone();
                 frozen.setX(from.getX());
-                frozen.setY(from.getY());
                 frozen.setZ(from.getZ());
                 event.setTo(frozen);
             }
@@ -272,14 +275,14 @@ public final class BombInteractionController {
     }
 
     public void registerFreezeGuard(){
-        MatchSessionState state = MatchSessionState.getInstance();
-        Listener freezeListener = new BombProgressFreezeListener();
-        Bukkit.getPluginManager().registerEvents(freezeListener, GameContext.getInstance().getPlugin());
+        MatchSessionState state = ctx.getMatchSessionState();
+        Listener freezeListener = new BombProgressFreezeListener(ctx.getMatchSessionState());
+        Bukkit.getPluginManager().registerEvents(freezeListener, ctx.getPlugin());
         state.setFreezeListener(freezeListener);
     }
 
     public void unregisterFreezeGuard(){
-        MatchSessionState state = MatchSessionState.getInstance();
+        MatchSessionState state = ctx.getMatchSessionState();
         Listener freezeListener = state.getFreezeListener();
         if(freezeListener != null){
             for(HandlerList handlerList : HandlerList.getHandlerLists()){
@@ -316,19 +319,19 @@ public final class BombInteractionController {
      * </p>
      */
     public void startBombParticleTask(){
-        ScheduledTask task = GameContext.getInstance().getPlugin().getServer().getGlobalRegionScheduler()
-                .runAtFixedRate(GameContext.getInstance().getPlugin(),
+        ScheduledTask task = ctx.getPlugin().getServer().getGlobalRegionScheduler()
+                .runAtFixedRate(ctx.getPlugin(),
                         scheduledTask -> spawnActivatedBombParticles(),
                         1L, 20L);
-        MatchSessionState.getInstance().setBombParticleTask(task);
+        ctx.getMatchSessionState().setBombParticleTask(task);
         subscribeBombExploded();
     }
 
     public void stopBombParticleTask(){
-        ScheduledTask bombParticleTask = MatchSessionState.getInstance().getBombParticleTask();
+        ScheduledTask bombParticleTask = ctx.getMatchSessionState().getBombParticleTask();
         if(bombParticleTask != null){
             bombParticleTask.cancel();
-            MatchSessionState.getInstance().setBombParticleTask(null);
+            ctx.getMatchSessionState().setBombParticleTask(null);
         }
         unsubscribeBombExploded();
     }
@@ -358,13 +361,13 @@ public final class BombInteractionController {
      * </p>
      */
     private void spawnActivatedBombParticles(){
-        if(MatchSessionState.getInstance().isMatchEnded()) return;
-        MapConfig mapConfig = ConfigManager.getInstance().getSelectedMapConfig();
+        if(ctx.getMatchSessionState().isMatchEnded()) return;
+        MapConfig mapConfig = ctx.getConfigManager().getSelectedMapConfig();
         if(mapConfig == null) return;
         World world = Bukkit.getWorld(mapConfig.getWorld());
         if(world == null) return;
 
-        for(ActiveBomb bomb : SectorManager.getInstance().getActiveBombs()){
+        for(ActiveBomb bomb : ctx.getSectorManager().getActiveBombs()){
             CubeRegion region = bomb.getConfig().getRegion();
             BombState state = bomb.getState();
 
@@ -442,7 +445,7 @@ public final class BombInteractionController {
         if(event == null || event.getBomb() == null){
             return;
         }
-        MapConfig mapConfig = ConfigManager.getInstance().getSelectedMapConfig();
+        MapConfig mapConfig = ctx.getConfigManager().getSelectedMapConfig();
         if(mapConfig == null){
             return;
         }

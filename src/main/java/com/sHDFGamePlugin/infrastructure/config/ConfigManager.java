@@ -15,35 +15,32 @@ import java.util.*;
 import java.util.logging.Logger;
 
 /**
- * 配置管理（单例）：加载 config.yml（全局设置）与 maps.yml（地图/据点/炸弹配置）。
+ * 配置管理：加载 config.yml（全局设置）与 maps.yml（地图/据点/炸弹配置）。
  * <p>
  * 单张地图配置出错时跳过该地图并记录日志，不影响其他地图加载。
+ * <p>
+ * 实例由 {@link com.sHDFGamePlugin.core.GameContext} 创建并持有，不再有静态单例。
  */
 public class ConfigManager {
-
-    private static final ConfigManager INSTANCE = new ConfigManager();
 
     /** 结算阶段战绩展示停留时长默认值（tick，200 = 10 秒），缺键/负值/读取失败时使用 */
     public static final int DEFAULT_FINISH_DISPLAY_TIME = 200;
 
-    /** 配置读取告警日志（不依赖插件实例是否已 init） */
+    /** 配置读取告警日志（不涉及插件/类加载器引用，静态安全） */
     private static final Logger LOGGER = Logger.getLogger(ConfigManager.class.getName());
 
+    private final JavaPlugin plugin;
     private FileConfiguration mainConfig;
     private FileConfiguration mapConfigFile;
-    private JavaPlugin plugin;
     private final Map<String, MapConfig> mapConfigs = new HashMap<>();
 
     private String selectedMapId;
 
-    private ConfigManager(){}
-
-    public static ConfigManager getInstance() {
-        return INSTANCE;
+    public ConfigManager(JavaPlugin plugin){
+        this.plugin = plugin;
     }
 
-    public void init(JavaPlugin plugin) {
-        this.plugin = plugin;
+    public void init() {
         //config.yml
         plugin.saveDefaultConfig();
         mainConfig = plugin.getConfig();

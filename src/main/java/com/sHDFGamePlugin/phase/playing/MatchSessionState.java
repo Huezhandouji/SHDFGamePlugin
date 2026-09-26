@@ -35,13 +35,8 @@ import java.util.UUID;
  */
 public final class MatchSessionState {
 
-    private static final MatchSessionState INSTANCE = new MatchSessionState();
-
-    private MatchSessionState() {}
-
-    public static MatchSessionState getInstance() {
-        return INSTANCE;
-    }
+    /** 实例由 {@link com.sHDFGamePlugin.core.GameContext} 创建并持有（不再有静态单例） */
+    public MatchSessionState() {}
 
     //进行中的装弹/拆弹进度：玩家 uuid -> 进度
     private final Map<UUID, BombInteractionController.BombProgress> activeProgresses = new HashMap<>();

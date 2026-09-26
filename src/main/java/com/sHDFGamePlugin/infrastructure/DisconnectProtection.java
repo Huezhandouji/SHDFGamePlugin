@@ -9,39 +9,38 @@ import java.util.Map;
 import java.util.UUID;
 
 /**
- * 断线保护管理器（单例）：玩家退出时保留其状态一段时间（重连时限），超时仍未重连则执行清理。
+ * 断线保护管理器：玩家退出时保留其状态一段时间（重连时限），超时仍未重连则执行清理。
  * <p>
  * 任务句柄集中持有：
  * - 玩家重连时可单独 {@link #cancel(UUID)}；
  * - 对局结束时可统一 {@link #cancelAll()}，避免残留回调跨局触发。
+ * <p>
+ * 实例由 {@link com.sHDFGamePlugin.core.GameContext} 创建并持有（不再有静态单例）。
  */
 public class DisconnectProtection {
-
-    private static final DisconnectProtection INSTANCE = new DisconnectProtection();
 
     /** 超时动作：由使用方定义（如"移除 PlayerStatus 并释放角色"） */
     public interface TimeoutAction {
         void onExpired(UUID uuid);
     }
 
+    private final JavaPlugin plugin;
+
     //玩家 uuid -> 挂起的超时任务
     private final Map<UUID, ScheduledTask> pendingTasks = new HashMap<>();
 
-    private DisconnectProtection() {}
-
-    public static DisconnectProtection getInstance() {
-        return INSTANCE;
+    public DisconnectProtection(JavaPlugin plugin) {
+        this.plugin = plugin;
     }
 
     /**
      * 玩家退出时开启保护：先取消该玩家已有的旧任务，再挂一个新的。
      *
-     * @param plugin     插件实例
      * @param uuid       退出的玩家
      * @param delayTicks 重连保护时长（tick），到点仍未重连则执行 action
      * @param action     超时动作
      */
-    public void start(JavaPlugin plugin, UUID uuid, long delayTicks, TimeoutAction action){
+    public void start(UUID uuid, long delayTicks, TimeoutAction action){
         cancel(uuid);
         ScheduledTask task = plugin.getServer().getGlobalRegionScheduler().runDelayed(
                 plugin,

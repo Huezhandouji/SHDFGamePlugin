@@ -7,7 +7,6 @@ import com.sHDFGamePlugin.domain.team.ShdfTeam;
 import com.sHDFGamePlugin.domain.team.TeamManager;
 import com.sHDFGamePlugin.infrastructure.GameEventBus;
 import com.sHDFGamePlugin.infrastructure.RoleBridge;
-import com.sHDFGamePlugin.infrastructure.config.ConfigManager;
 import com.sHDFGamePlugin.infrastructure.config.MapConfig;
 import com.sHDFGamePlugin.infrastructure.event.BombExplodedEvent;
 import com.sHDFGamePlugin.infrastructure.event.InventoryClickGameItemEvent;
@@ -48,18 +47,26 @@ import java.util.UUID;
  * 生命周期：{@link #start()} / {@link #stop()} 由门面 {@code PlayingPhase.onEnter/onExit} 成对调用。
  * <b>订阅顺序</b>：{@code start()} 必须早于 {@code SectorProgressController.subscribe()}——GameEventBus
  * 按注册顺序分发，间歇期要在"据点推进"把新据点激活之前看到"当前据点全部炸弹爆炸"这一刻。
+ * <p>
+ * 实例由 {@link GameContext} 创建并持有（不再有静态单例）：两个角色选择 GUI 组件也在构造时注入。
  */
 public final class IntermissionController {
 
-    private static final IntermissionController INSTANCE = new IntermissionController();
+    private final GameContext ctx;
+    private final PlayingItemFactory playingItemFactory;
+    private final RoleBridge roleBridge;
 
     /** 间歇期切角色子菜单的角色按钮 GameItem id 前缀（与选角阶段同布局、不同前缀，避免 id 冲突） */
     private static final String ROLE_BUTTON_ID_PREFIX = "gameItem_playingPhase_role_";
 
-    private IntermissionController() {}
-
-    public static IntermissionController getInstance() {
-        return INSTANCE;
+    public IntermissionController(GameContext ctx, PlayingItemFactory playingItemFactory,
+                                  RoleBridge roleBridge, RoleSelectionGui switchRoleGui,
+                                  RoleSelectionGui readOnlyRoleGui) {
+        this.ctx = ctx;
+        this.playingItemFactory = playingItemFactory;
+        this.roleBridge = roleBridge;
+        this.switchRoleGui = switchRoleGui;
+        this.readOnlyRoleGui = readOnlyRoleGui;
     }
 
     // ==================== 状态 ====================
@@ -78,8 +85,9 @@ public final class IntermissionController {
     private GameEventBus.Subscription inventoryClickSubscription;
 
     //角色选择 GUI 组件：可点击版（间歇期内打开）与只读版（间歇期结束时把已打开的菜单刷成禁用态）
-    private RoleSelectionGui switchRoleGui;
-    private RoleSelectionGui readOnlyRoleGui;
+    //由 GameContext 在构造时注入，本类只使用、不创建也不置空
+    private final RoleSelectionGui switchRoleGui;
+    private final RoleSelectionGui readOnlyRoleGui;
 
     //角色按钮 GameItem id -> roleId（点击回调反查；同一 roleId 可能同时出现在两队角色池，故以 id 为键）
     private final Map<String, String> roleIdByButtonId = new HashMap<>();
@@ -91,14 +99,11 @@ public final class IntermissionController {
     // ==================== 生命周期 ====================
 
     /**
-     * 注册本模块：建 GUI 组件 + 注册两队角色按钮 + 订阅事件。
+     * 注册本模块：注册两队角色按钮 + 订阅事件。
      * <p>
      * <b>必须由门面在 {@code SectorProgressController.subscribe()} 之前调用</b>（见类注释的订阅顺序说明）。
      */
     public void start(){
-        switchRoleGui = RoleSelectionGui.create(ROLE_BUTTON_ID_PREFIX, null, true);
-        readOnlyRoleGui = RoleSelectionGui.create(ROLE_BUTTON_ID_PREFIX, null, false);
-
         bombExplodedSubscription = GameEventBus.subscribe(BombExplodedEvent.class, this::handleBombExploded);
         inventoryClickSubscription = GameEventBus.subscribe(InventoryClickGameItemEvent.class, this::handleInventoryClick);
 
@@ -117,8 +122,6 @@ public final class IntermissionController {
         }
         unregisterRoleButtons();
         reset();
-        switchRoleGui = null;
-        readOnlyRoleGui = null;
     }
 
     /** 停表并清空间歇期状态与菜单跟踪（对局结束/阶段退出；不发玩家可见反馈） */
@@ -168,9 +171,9 @@ public final class IntermissionController {
      * 在推进后立即开启新据点（等同旧行为）。最后一个据点不进入间歇期（推进即全据点攻占）。
      */
     private void handleBombExploded(BombExplodedEvent event){
-        if(MatchSessionState.getInstance().isMatchEnded()) return;
+        if(ctx.getMatchSessionState().isMatchEnded()) return;
 
-        SectorManager sectorManager = SectorManager.getInstance();
+        SectorManager sectorManager = ctx.getSectorManager();
         if(sectorManager.getSectorAdvanceInterval() <= 0) return;
         if(event.getSector() != sectorManager.getCurrentSector()) return;
         if(!sectorManager.isAllBombsExploded()) return;
@@ -193,8 +196,8 @@ public final class IntermissionController {
         //间歇期开始：已打开的战斗菜单立即出现"切换角色"入口
         refreshBattleMenus(true);
 
-        ScheduledTask task = GameContext.getInstance().getPlugin().getServer().getGlobalRegionScheduler()
-                .runAtFixedRate(GameContext.getInstance().getPlugin(),
+        ScheduledTask task = ctx.getPlugin().getServer().getGlobalRegionScheduler()
+                .runAtFixedRate(ctx.getPlugin(),
                         scheduledTask -> tickIntermission(),
                         1L, 1L);
         tickTask = task;
@@ -204,7 +207,7 @@ public final class IntermissionController {
     private void tickIntermission(){
         if(!intermissionActive) return;
         //对局已结束（最后一个据点攻占后 endMatch）：静默收尾，不再开启据点
-        if(MatchSessionState.getInstance().isMatchEnded()){
+        if(ctx.getMatchSessionState().isMatchEnded()){
             reset();
             return;
         }
@@ -233,7 +236,7 @@ public final class IntermissionController {
         lastAnnouncedSecond = -1;
 
         //新据点正式开启：SectorTimeLimit 从这里开始计时（间歇期不消耗进攻方时限）
-        SectorManager.getInstance().openCurrentSector();
+        ctx.getSectorManager().openCurrentSector();
 
         MessageUtil.broadcastPrefixedMessage(Component.text(
                 "新据点已开启, 进攻方时限开始计时!", NamedTextColor.GREEN, TextDecoration.BOLD));
@@ -276,7 +279,7 @@ public final class IntermissionController {
                 continue;
             }
             gui.setSlot(PlayingItemFactory.BATTLE_MENU_SWITCH_ROLE_SLOT,
-                    PlayingItemFactory.getInstance().createSwitchRoleMenuItem(enabled));
+                    playingItemFactory.createSwitchRoleMenuItem(enabled));
             gui.refresh();
         }
     }
@@ -292,7 +295,7 @@ public final class IntermissionController {
                 trackedSubmenus.remove(uuid);
                 continue;
             }
-            ShdfTeam team = TeamManager.getInstance().getTeam(uuid);
+            ShdfTeam team = ctx.getTeamManager().getTeam(uuid);
             if(team == null || !team.isCombatant()){
                 trackedSubmenus.remove(uuid);
                 continue;
@@ -316,7 +319,7 @@ public final class IntermissionController {
     /** 注册两队全部有效角色按钮：GameItem id 由 {@link RoleSelectionGui} 统一生成，与菜单里显示的 id 同源 */
     private void registerRoleButtons(){
         roleIdByButtonId.clear();
-        MapConfig mapConfig = ConfigManager.getInstance().getSelectedMapConfig();
+        MapConfig mapConfig = ctx.getConfigManager().getSelectedMapConfig();
         if(mapConfig == null) return;
         registerRoleButtonsForTeam(mapConfig.getAttackerRoles(), ShdfTeam.ATTACKER);
         registerRoleButtonsForTeam(mapConfig.getDefenderRoles(), ShdfTeam.DEFENDER);
@@ -324,18 +327,17 @@ public final class IntermissionController {
 
     private void registerRoleButtonsForTeam(List<String> roleIds, ShdfTeam team){
         if(roleIds == null) return;
-        RoleBridge roleBridge = RoleBridge.getInstance();
         for(String roleId : roleIds){
             //只注册已实现（有效）的角色，与选角阶段一致
             if(!roleBridge.isValidRoleId(roleId)) continue;
             String gameItemId = switchRoleGui.generateRoleButtonGameItemId(team, roleId);
             if(roleIdByButtonId.containsKey(gameItemId)){
-                GameContext.getInstance().getPlugin().getLogger().warning(
+                ctx.getPlugin().getLogger().warning(
                         "[IntermissionController] 角色按钮 id 冲突, 跳过: " + team + "/" + roleId + " -> " + gameItemId);
                 continue;
             }
             roleIdByButtonId.put(gameItemId, roleId);
-            GameItemRegistry.createAndRegister(gameItemId, builder ->
+            ctx.getGameItemRegistry().createAndRegister(gameItemId, builder ->
                     builder.canDrop(false).canMove(false)
                             .inventoryClickHandler(event ->
                                     GameEventBus.publish(new InventoryClickGameItemEvent(
@@ -345,7 +347,7 @@ public final class IntermissionController {
 
     private void unregisterRoleButtons(){
         for(String gameItemId : roleIdByButtonId.keySet()){
-            GameItemRegistry.unregister(gameItemId);
+            ctx.getGameItemRegistry().unregister(gameItemId);
         }
         roleIdByButtonId.clear();
     }
@@ -373,7 +375,7 @@ public final class IntermissionController {
             MessageUtil.sendMessageWithPrefix(player, Component.text("间歇期已结束, 无法切换角色", NamedTextColor.RED));
             return;
         }
-        ShdfTeam team = TeamManager.getInstance().getTeam(player.getUniqueId());
+        ShdfTeam team = ctx.getTeamManager().getTeam(player.getUniqueId());
         if(team == null || !team.isCombatant()) return;
 
         ChestGui gui = switchRoleGui.openMenu(player, team, getRolePool(team), getSideDisplayName(team));
@@ -390,7 +392,7 @@ public final class IntermissionController {
             return;
         }
         UUID uuid = player.getUniqueId();
-        TeamManager teamManager = TeamManager.getInstance();
+        TeamManager teamManager = ctx.getTeamManager();
         ShdfTeam team = teamManager.getTeam(uuid);
         if(team == null || !team.isCombatant()){
             MessageUtil.sendMessageWithPrefix(player, Component.text("只有参战人员才能切换角色", NamedTextColor.GRAY));
@@ -426,10 +428,9 @@ public final class IntermissionController {
      * </ol>
      */
     private boolean isRoleTakenByOthers(ShdfTeam team, String roleId, UUID selfUuid){
-        RoleBridge roleBridge = RoleBridge.getInstance();
         if(roleBridge.isAllowDuplicateRoles()) return false;
 
-        for(PlayerStatus status : TeamManager.getInstance().getAllPlayerStatusesInTeam(team)){
+        for(PlayerStatus status : ctx.getTeamManager().getAllPlayerStatusesInTeam(team)){
             if(roleId.equals(status.getSelectedRoleId()) && !status.getUuid().equals(selfUuid)){
                 return true;
             }
@@ -445,7 +446,7 @@ public final class IntermissionController {
     }
 
     private List<String> getRolePool(ShdfTeam team){
-        MapConfig mapConfig = ConfigManager.getInstance().getSelectedMapConfig();
+        MapConfig mapConfig = ctx.getConfigManager().getSelectedMapConfig();
         if(mapConfig == null) return List.of();
         if(team == ShdfTeam.ATTACKER) return mapConfig.getAttackerRoles();
         return mapConfig.getDefenderRoles();

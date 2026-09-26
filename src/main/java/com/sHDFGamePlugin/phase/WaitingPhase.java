@@ -1,15 +1,11 @@
 package com.sHDFGamePlugin.phase;
 
-import com.sHDFGamePlugin.SHDFGamePlugin;
 import com.sHDFGamePlugin.core.GameContext;
 import com.sHDFGamePlugin.core.GameState;
-import com.sHDFGamePlugin.core.GameStateMachine;
-import com.sHDFGamePlugin.domain.spawn.SpawnManager;
 import com.sHDFGamePlugin.domain.team.PlayerState;
 import com.sHDFGamePlugin.domain.team.ShdfTeam;
 import com.sHDFGamePlugin.domain.team.TeamManager;
 import com.sHDFGamePlugin.infrastructure.GameEventBus;
-import com.sHDFGamePlugin.infrastructure.RoleBridge;
 import com.sHDFGamePlugin.infrastructure.config.ConfigManager;
 import com.sHDFGamePlugin.infrastructure.event.InventoryClickGameItemEvent;
 import com.sHDFGamePlugin.infrastructure.event.RightClickGameItemEvent;
@@ -17,8 +13,6 @@ import com.sHDFGamePlugin.infrastructure.event.ShdfPlayerJoinEvent;
 import com.sHDFGamePlugin.infrastructure.event.ShdfPlayerQuitEvent;
 import com.sHDFGamePlugin.infrastructure.gui.ChestGui;
 import com.sHDFGamePlugin.infrastructure.item.GameItem;
-import com.sHDFGamePlugin.infrastructure.item.GameItemRegistry;
-import com.sHDFGamePlugin.infrastructure.item.GuideBookFactory;
 import com.sHDFGamePlugin.util.GameCountdown;
 import com.sHDFGamePlugin.util.MessageUtil;
 import com.sHDFGamePlugin.util.SoundUtil;
@@ -41,7 +35,7 @@ import java.util.UUID;
 
 public class WaitingPhase implements GamePhase {
 
-    private static final WaitingPhase INSTANCE = new WaitingPhase();
+    private final GameContext ctx;
 
     //GameItem的id
     private static final String teamSelectorId = "gameItem_waitingPhase_teamSelector";
@@ -72,18 +66,21 @@ public class WaitingPhase implements GamePhase {
     private Team unknownTeam;
 
 
-    private WaitingPhase(){
+    /** 实例由 {@link GameContext} 创建并持有（不再有静态单例） */
+    public WaitingPhase(GameContext ctx){
+        this.ctx = ctx;
     }
 
-    public static WaitingPhase getInstance(){
-        return INSTANCE;
+    /** 物品 id 的 PDC 键（由插件实例派生，运行期取用） */
+    private NamespacedKey gameItemKey(){
+        return ctx.getInteractionManager().gameItemKey();
     }
 
 
 
     @Override
     public void onEnter() {
-        TeamManager.getInstance().removeAllPlayers();
+        ctx.getTeamManager().removeAllPlayers();
 
         registerGameItems();
 
@@ -136,7 +133,7 @@ public class WaitingPhase implements GamePhase {
     }
 
     private void initScoreboardTeam(){
-        Scoreboard sb = SHDFGamePlugin.getInstance().getTempScoreboard();
+        Scoreboard sb = ctx.getTempScoreboard();
         if(attackerTeam == null){
             attackerTeam = sb.registerNewTeam("attacker");
             attackerTeam.prefix(Component.text("#进攻方SHADOW#", NamedTextColor.LIGHT_PURPLE, TextDecoration.BOLD));
@@ -168,8 +165,8 @@ public class WaitingPhase implements GamePhase {
 
     private void startCountdown(){
         //自动 +1 补偿首 tick，配置里无需自行加 1
-        int durationTicks = ConfigManager.getInstance().getCountdownTime() + 1;
-        countdown = new GameCountdown(GameContext.getInstance().getPlugin(), durationTicks);
+        int durationTicks = ctx.getConfigManager().getCountdownTime() + 1;
+        countdown = new GameCountdown(ctx.getPlugin(), durationTicks);
         countdown.setOnTick(tick -> {
             //标题倒计时：仅在最后 10 秒（200 tick）内显示
             if(tick <= 200 && tick % 2 == 0){
@@ -234,7 +231,7 @@ public class WaitingPhase implements GamePhase {
         });
         countdown.setOnFinish(() -> {
             resetExperienceBar();
-            GameStateMachine.getInstance().transitionTo(GameState.ROLE_SELECTING);
+            ctx.getGameStateMachine().transitionTo(GameState.ROLE_SELECTING);
         });
 
         countdown.start();
@@ -266,14 +263,14 @@ public class WaitingPhase implements GamePhase {
     }
 
     private void createSidebarObjective(){
-        sidebarObjective = SHDFGamePlugin.getInstance().getTempScoreboard().registerNewObjective("waiting_phase_sidebar", Criteria.DUMMY,
+        sidebarObjective = ctx.getTempScoreboard().registerNewObjective("waiting_phase_sidebar", Criteria.DUMMY,
                 Component.text("DECAYING FRONTLINE", NamedTextColor.GOLD, TextDecoration.BOLD));
         sidebarObjective.setDisplaySlot(DisplaySlot.SIDEBAR);
     }
 
     @SuppressWarnings("deprecated")
     private void updateSidebarObjective(){
-        ConfigManager config = ConfigManager.getInstance();
+        ConfigManager config = ctx.getConfigManager();
         //重建侧边栏：先注销旧的（兼容跨阶段残留），再新建
         if(sidebarObjective != null){
             sidebarObjective.unregister();
@@ -321,13 +318,13 @@ public class WaitingPhase implements GamePhase {
         registerRightClickItem(mapVoteId);
         //玩法说明书：受保护（不可丢弃/移动）；右键时本类显式打开成书——因为 InteractionManager
         //对已注册 GameItem 的右键一律 setCancelled(true)，原版「右键翻书」不会自己被触发
-        GameItemRegistry.createAndRegister(guideBookId, builder ->
+        ctx.getGameItemRegistry().createAndRegister(guideBookId, builder ->
                 builder.canDrop(false).canMove(false)
                         .rightClickHandler(event -> {
                             ItemStack held = event.getItem();
                             event.getPlayer().openBook(held != null && held.getType() == Material.WRITTEN_BOOK
                                     ? held
-                                    : GuideBookFactory.getInstance().createBook());
+                                    : ctx.getGuideBookFactory().createBook());
                         }));
         //选队菜单物品：库存点击发布事件
         registerInventoryClickItem(teamButtonAttackerId);
@@ -338,7 +335,7 @@ public class WaitingPhase implements GamePhase {
 
     /** 注册一个"右键即发布事件"的快捷栏物品 */
     private void registerRightClickItem(String itemId){
-        GameItemRegistry.createAndRegister(itemId, builder ->
+        ctx.getGameItemRegistry().createAndRegister(itemId, builder ->
                 builder.canDrop(false).canMove(false)
                         .rightClickHandler(event ->
                                 GameEventBus.publish(new RightClickGameItemEvent(event.getPlayer(), itemId))));
@@ -346,7 +343,7 @@ public class WaitingPhase implements GamePhase {
 
     /** 注册一个"库存点击即发布事件"的菜单物品 */
     private void registerInventoryClickItem(String itemId){
-        GameItemRegistry.createAndRegister(itemId, builder ->
+        ctx.getGameItemRegistry().createAndRegister(itemId, builder ->
                 builder.canDrop(false).canMove(false)
                         .inventoryClickHandler(event ->
                                 GameEventBus.publish(new InventoryClickGameItemEvent((Player) event.getWhoClicked(), itemId))));
@@ -354,7 +351,7 @@ public class WaitingPhase implements GamePhase {
 
     private void handlePlayerJoin(Player player){
         //传送玩家到大厅位置
-        ConfigManager config = ConfigManager.getInstance();
+        ConfigManager config = ctx.getConfigManager();
         World world = Bukkit.getWorld(config.getWaitingWorld());
         if(world == null){
             player.kick(Component.text("SHDF插件发生错误, 您已被踢出游戏!", NamedTextColor.RED, TextDecoration.BOLD));
@@ -365,9 +362,9 @@ public class WaitingPhase implements GamePhase {
 
         player.getInventory().clear();
 
-        TeamManager.getInstance().removePlayer(player.getUniqueId());
+        ctx.getTeamManager().removePlayer(player.getUniqueId());
         registerPlayer(player);
-        player.setScoreboard(SHDFGamePlugin.getInstance().getTempScoreboard());
+        player.setScoreboard(ctx.getTempScoreboard());
         updateSidebarObjective();
         checkStartConditions();
 
@@ -375,13 +372,13 @@ public class WaitingPhase implements GamePhase {
     }
 
     private void handlePlayerQuit(Player player){
-        TeamManager.getInstance().removePlayer(player.getUniqueId());
-        SpawnManager.getInstance().removePlayer(player.getUniqueId());
-        RoleBridge.getInstance().clearPlayerRole(player.getUniqueId());
+        ctx.getTeamManager().removePlayer(player.getUniqueId());
+        ctx.getSpawnManager().removePlayer(player.getUniqueId());
+        ctx.getRoleBridge().clearPlayerRole(player.getUniqueId());
 
         //空服判定：除退出者外没有其他玩家在线（与 PlayingPhase 口径一致），回 IDLE 由下一局的加入事件重新开局
         if(isNoOtherPlayerOnline(player)){
-            GameStateMachine.getInstance().transitionTo(GameState.IDLE);
+            ctx.getGameStateMachine().transitionTo(GameState.IDLE);
             return;
         }
 
@@ -407,9 +404,9 @@ public class WaitingPhase implements GamePhase {
     }
 
     private void registerPlayer(Player player){
-        TeamManager teamManager = TeamManager.getInstance();
+        TeamManager teamManager = ctx.getTeamManager();
         if(teamManager.getTeam(player.getUniqueId()) == null){
-            ConfigManager config =  ConfigManager.getInstance();
+            ConfigManager config =  ctx.getConfigManager();
             ShdfTeam initialShdfTeam = config.isDefaultSpectatorOrUnknown() ? ShdfTeam.SPECTATOR : ShdfTeam.UNKNOWN;
             teamManager.addPlayer(player.getUniqueId(), initialShdfTeam, PlayerState.WAITING);
             handleTeamSelect(player, initialShdfTeam);
@@ -418,8 +415,8 @@ public class WaitingPhase implements GamePhase {
     }
 
     private void checkStartConditions(){
-        ConfigManager config = ConfigManager.getInstance();
-        TeamManager teamManager = TeamManager.getInstance();
+        ConfigManager config = ctx.getConfigManager();
+        TeamManager teamManager = ctx.getTeamManager();
 
         boolean isMetConditions = true;
         String countdownCancelReason = "未知的取消原因, 检查插件逻辑!";
@@ -456,8 +453,8 @@ public class WaitingPhase implements GamePhase {
     }
     //检查各项开启游戏指标
     private boolean isConformMinPlayerPerSide(){
-        ConfigManager config = ConfigManager.getInstance();
-        TeamManager teamManager = TeamManager.getInstance();
+        ConfigManager config = ctx.getConfigManager();
+        TeamManager teamManager = ctx.getTeamManager();
         int attackers = teamManager.getPlayerPopulationOnTeam(ShdfTeam.ATTACKER);
         int defenders = teamManager.getPlayerPopulationOnTeam(ShdfTeam.DEFENDER);
         int unknowns = teamManager.getPlayerPopulationOnTeam(ShdfTeam.UNKNOWN);
@@ -472,12 +469,12 @@ public class WaitingPhase implements GamePhase {
     }
 
     private boolean isConformMaxSideDiff(){
-        return TeamManager.getInstance().getSideDiff() <= ConfigManager.getInstance().getMaxSideDiff();
+        return ctx.getTeamManager().getSideDiff() <= ctx.getConfigManager().getMaxSideDiff();
     }
 
     private boolean isAllPlayersReady(){
-        ConfigManager config = ConfigManager.getInstance();
-        TeamManager teamManager = TeamManager.getInstance();
+        ConfigManager config = ctx.getConfigManager();
+        TeamManager teamManager = ctx.getTeamManager();
         if(!config.isRequireReadyMode()) return true;
         if(teamManager.getPlayerPopulation() == 0) return false;
         //除观战者外的参战人员（进攻/防守/随机）都需准备
@@ -494,7 +491,7 @@ public class WaitingPhase implements GamePhase {
     }
 
     private void updateWaitingGameItems(Player player){
-        TeamManager teamManager = TeamManager.getInstance();
+        TeamManager teamManager = ctx.getTeamManager();
         UUID playerId = player.getUniqueId();
         ShdfTeam shdfTeam = teamManager.getTeam(playerId);
         if(shdfTeam == null) return;
@@ -503,7 +500,7 @@ public class WaitingPhase implements GamePhase {
         inv.setItem(0, createTeamSelectorItem());
 
         //准备物品发给非观战者
-        if(shdfTeam.isCombatant() && ConfigManager.getInstance().isRequireReadyMode()){
+        if(shdfTeam.isCombatant() && ctx.getConfigManager().isRequireReadyMode()){
             inv.setItem(1, createReadyItem(teamManager.isReady(playerId)));
         }
         else{
@@ -513,14 +510,14 @@ public class WaitingPhase implements GamePhase {
         inv.setItem(2, createMapVoteItem());
 
         //第 6 格（索引 5）：玩法说明书，右键翻开；内容来自数据目录的 gameplay_guide.txt
-        inv.setItem(5, GuideBookFactory.getInstance().createBook());
+        inv.setItem(5, ctx.getGuideBookFactory().createBook());
     }
 
     private ItemStack createTeamSelectorItem(){
         ItemStack item = new ItemStack(Material.NETHER_STAR);
         ItemMeta meta = item.getItemMeta();
         meta.displayName(Component.text("选择阵营", NamedTextColor.GOLD, TextDecoration.BOLD));
-        meta = GameItem.applyIdOnItemMeta(teamSelectorId, meta);
+        meta = GameItem.applyIdOnItemMeta(gameItemKey(), teamSelectorId, meta);
         item.setItemMeta(meta);
         return item;
     }
@@ -543,7 +540,7 @@ public class WaitingPhase implements GamePhase {
         meta.lore(List.of(
                 Component.text("除观战者外的所有参战人员准备后, 游戏才会开始", NamedTextColor.GRAY)
         ));
-        meta = GameItem.applyIdOnItemMeta(readyToggleId, meta);
+        meta = GameItem.applyIdOnItemMeta(gameItemKey(), readyToggleId, meta);
         item.setItemMeta(meta);
         return item;
     }
@@ -555,7 +552,7 @@ public class WaitingPhase implements GamePhase {
         meta.lore(List.of(
                 Component.text("尚未实现", NamedTextColor.GRAY)
         ));
-        meta = GameItem.applyIdOnItemMeta(mapVoteId, meta);
+        meta = GameItem.applyIdOnItemMeta(gameItemKey(), mapVoteId, meta);
         item.setItemMeta(meta);
         return item;
     }
@@ -569,7 +566,7 @@ public class WaitingPhase implements GamePhase {
             case readyToggleId-> toggleReady(player);
             case mapVoteId -> useMapSelector(player);
             default -> {
-                GameContext.getInstance().getPlugin().getLogger().warning("Player " + player.getName() + " try to use a GameItem not belonging to WaitingPhase!");
+                ctx.getPlugin().getLogger().warning("Player " + player.getName() + " try to use a GameItem not belonging to WaitingPhase!");
             }
         }
     }
@@ -590,7 +587,7 @@ public class WaitingPhase implements GamePhase {
     }
 
     private void handleTeamSelect(Player player, ShdfTeam targetShdfTeam){
-        TeamManager teamManager = TeamManager.getInstance();
+        TeamManager teamManager = ctx.getTeamManager();
         UUID uuid = player.getUniqueId();
         ShdfTeam currentShdfTeam = teamManager.getTeam(uuid);
 
@@ -604,7 +601,7 @@ public class WaitingPhase implements GamePhase {
             if(targetShdfTeam == ShdfTeam.DEFENDER) defenders++;
 
             int diff = Math.abs(attackers - defenders);
-            if(diff > ConfigManager.getInstance().getMaxSideDiff()){
+            if(diff > ctx.getConfigManager().getMaxSideDiff()){
                 player.sendMessage(Component.text("SHDF>>无法加入该阵营, 因为切换后人数差过大"));
                 return;
             }
@@ -615,10 +612,10 @@ public class WaitingPhase implements GamePhase {
 
         //切换准备状态
         if(targetShdfTeam.isCombatant()){
-            TeamManager.getInstance().setReady(uuid, false);
+            ctx.getTeamManager().setReady(uuid, false);
         }
         else{
-            TeamManager.getInstance().setReady(uuid, true);
+            ctx.getTeamManager().setReady(uuid, true);
         }
         updateSidebarObjective();
 
@@ -648,7 +645,7 @@ public class WaitingPhase implements GamePhase {
                 teamButtonUnknownId, ShdfTeam.UNKNOWN,
                 List.of(Component.text("你将会在游戏开始时被随机分配到进攻方或者防守方!", NamedTextColor.YELLOW, TextDecoration.BOLD)));
 
-        ChestGui gui = ChestGui.Builder.create()
+        ChestGui gui = ChestGui.Builder.create().gameItemKey(gameItemKey())
                 .title(Component.text("选择阵营", NamedTextColor.YELLOW).decorate(TextDecoration.BOLD))
                 .rows(1)
                 .setSlot(0, buttonAttacker)
@@ -670,8 +667,8 @@ public class WaitingPhase implements GamePhase {
         if(extraLore != null){
             lore.addAll(extraLore);
         }
-        lore.add(Component.text("这个队伍有 " + TeamManager.getInstance().getPlayerPopulationOnTeam(team) + " 名玩家:", NamedTextColor.GRAY));
-        for(UUID pid : TeamManager.getInstance().getAllPlayersUuidsInTeam(team)){
+        lore.add(Component.text("这个队伍有 " + ctx.getTeamManager().getPlayerPopulationOnTeam(team) + " 名玩家:", NamedTextColor.GRAY));
+        for(UUID pid : ctx.getTeamManager().getAllPlayersUuidsInTeam(team)){
             Player p = Bukkit.getPlayer(pid);
             if(p != null){
                 lore.add(Component.text(p.getName(), NamedTextColor.GRAY));
@@ -682,14 +679,14 @@ public class WaitingPhase implements GamePhase {
         }
 
         meta.lore(lore);
-        meta = GameItem.applyIdOnItemMeta(gameItemId, meta);
+        meta = GameItem.applyIdOnItemMeta(gameItemKey(), gameItemId, meta);
         button.setItemMeta(meta);
         return button;
     }
 
     private void toggleReady(Player player) {
 
-        TeamManager teamManager = TeamManager.getInstance();
+        TeamManager teamManager = ctx.getTeamManager();
         UUID uuid = player.getUniqueId();
 
         //只有战斗人员才能准备

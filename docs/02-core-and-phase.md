@@ -4,16 +4,20 @@
 
 | 类 | 职责 |
 |---|---|
-| `GameContext` | 单例容器：持有插件实例与 `ConfigManager`，供全局访问（如取调度器/日志） |
+| `GameContext` | **实例**容器（非单例）：在构造函数里创建并持有<u>全部</u>组件（管理器/控制器/阶段/状态机）并互相注入，供各组件取插件实例、配置与彼此引用 |
 | `GameState` | 枚举：IDLE / WAITING / ROLE_SELECTING / PLAYING / FINISHED |
 | `GameStateMachine` | 状态机：`transitionTo` 先调旧态 `onExit` 再调新态 `onEnter`，全程打日志 |
 
-注意：`GameContext.getPlugin()` 在 `onEnable` 里被 `GameContext.init` 初始化前不要调用。
+`GameContext` 由 `SHDFGamePlugin#onEnable` 构造一次（`new GameContext(this)`），`onDisable` 调
+`shutdown()` 后把引用置空。**工程内没有 `getInstance()`**：需要上下文的组件在构造时接收它本身
+（各阶段类、PLAYING 控制器），其余组件只接收自己真正依赖的那几个管理器。
+
+注意：`GameContext.getPlugin()` 在 `SHDFGamePlugin#onEnable` 里构造上下文之前不可用；上下文构造完成后始终可用。
 
 ## phase 包（阶段即玩法）
 
 ### 通用模式
-- 每个阶段是**单例**；`onEnter` 注册订阅/发物品/启倒计时，`onExit` 注销/回收。
+- 每个阶段由 `GameContext` 构造并注入一次；`onEnter` 注册订阅/发物品/启倒计时，`onExit` 注销/回收。
 - 阶段之间互不直接引用，靠 `GameEventBus` + `GameStateMachine` 通信。
 
 ### IdlePhase（原代码）

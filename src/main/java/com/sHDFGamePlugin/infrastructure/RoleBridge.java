@@ -10,18 +10,25 @@ import org.bukkit.Bukkit;
 import org.bukkit.Material;
 import org.bukkit.entity.LivingEntity;
 import org.bukkit.entity.Player;
+import org.bukkit.plugin.java.JavaPlugin;
 
 import java.util.*;
 import java.util.List;
 
 /**
- * 角色桥接（单例）：封装外部插件 ShadowHunterRolesPlugin 的 RoleAPI。
+ * 角色桥接：封装外部插件 ShadowHunterRolesPlugin 的 RoleAPI。
  * <p>
  * 校验阵营角色池、管理角色占用（可选去重）、按玩家记录当前角色。
+ * <p>
+ * 实例由 {@link com.sHDFGamePlugin.core.GameContext} 创建并持有（不再有静态单例）；
+ * 队伍查询所用的 {@link TeamManager} 在构造时注入，因此本类与 TeamManager 之间不再有
+ * "通过静态实例互相查找"的循环依赖。
  */
 public class RoleBridge {
 
-    private static RoleBridge INSTANCE = new RoleBridge();
+    private final JavaPlugin plugin;
+    private final ConfigManager configManager;
+    private final TeamManager teamManager;
 
     private RoleAPI roleAPI;
     private MapConfig currentMapConfig;
@@ -33,10 +40,10 @@ public class RoleBridge {
     //角色应用失败原因去重记录：玩家 uuid -> 最近一次已记录的原因（同一玩家同一原因只记一次，避免部署重试刷屏）
     private final Map<UUID, String> roleFailureReasonLogged = new HashMap<>();
 
-    private RoleBridge() {}
-
-    public static RoleBridge getInstance() {
-        return INSTANCE;
+    public RoleBridge(JavaPlugin plugin, ConfigManager configManager, TeamManager teamManager) {
+        this.plugin = plugin;
+        this.configManager = configManager;
+        this.teamManager = teamManager;
     }
 
     public void init(){
@@ -44,7 +51,7 @@ public class RoleBridge {
         if(this.roleAPI == null){
             throw new IllegalStateException("Role API 未注册，请检查 ShadowHunterRolesPlugin 是否正确加载");
         }
-        this.allowDuplicateRoles = ConfigManager.getInstance().isAllowDuplicateRoles();
+        this.allowDuplicateRoles = configManager.isAllowDuplicateRoles();
     }
 
     /** 设置本局是否允许重复角色（选角阶段按人数动态调整） */
@@ -132,7 +139,7 @@ public class RoleBridge {
         if(roleId == null || roleId.isEmpty()){
             return failRole(uuid, roleId, "未选择角色(selectedRoleId 为空)");
         }
-        ShdfTeam shdfTeam = TeamManager.getInstance().getTeam(uuid);
+        ShdfTeam shdfTeam = teamManager.getTeam(uuid);
         if(!shdfTeam.isParticipant()){
             return failRole(uuid, roleId, "阵营非参战方: " + shdfTeam);
         }

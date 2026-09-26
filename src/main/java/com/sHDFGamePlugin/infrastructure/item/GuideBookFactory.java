@@ -1,6 +1,5 @@
 package com.sHDFGamePlugin.infrastructure.item;
 
-import com.sHDFGamePlugin.SHDFGamePlugin;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
 import net.kyori.adventure.text.format.TextDecoration;
@@ -8,6 +7,7 @@ import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer;
 import org.bukkit.Material;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.BookMeta;
+import org.bukkit.plugin.java.JavaPlugin;
 
 import java.io.File;
 import java.io.IOException;
@@ -60,13 +60,11 @@ public final class GuideBookFactory {
 
     private static final LegacyComponentSerializer LEGACY = LegacyComponentSerializer.legacyAmpersand();
 
-    private static final GuideBookFactory INSTANCE = new GuideBookFactory();
+    private final JavaPlugin plugin;
 
-    public static GuideBookFactory getInstance() {
-        return INSTANCE;
+    public GuideBookFactory(JavaPlugin plugin) {
+        this.plugin = plugin;
     }
-
-    private GuideBookFactory() {}
 
     /** 缓存：成书标题/作者与正文各页（null 表示尚未加载） */
     private Component title;
@@ -116,10 +114,6 @@ public final class GuideBookFactory {
 
     /** 读取数据目录下的说明文件；缺失时先释放 jar 内默认内容。失败返回 null（由调用方回退） */
     private String readRawText() {
-        SHDFGamePlugin plugin = SHDFGamePlugin.getInstance();
-        if (plugin == null) {
-            return null;
-        }
         try {
             File file = new File(plugin.getDataFolder(), RESOURCE_NAME);
             if (!file.exists()) {

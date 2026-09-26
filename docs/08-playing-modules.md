@@ -37,7 +37,7 @@ DeathHandler ─> DeploymentController.setAwaitingLook(...)   // 死亡转入等
 DeploymentController / DeathHandler / BombInteractionController ─> PlayingItemFactory（发物品）
 ```
 
-所有控制器/门面为**单例**（`getInstance()`），与工程既有相位类/管理器风格一致。
+所有控制器/门面由 `GameContext` 在其构造函数里创建并互相注入（**非单例**，工程已无 `getInstance()`）。
 
 ---
 
@@ -60,7 +60,7 @@ DeploymentController / DeathHandler / BombInteractionController ─> PlayingItem
   `IN_BATTLE` 且阵营匹配，通过后交给 `BombInteractionController.tryStartBombProgress`；
 - `subscribeEvents/unsubscribeEvents`、`subscribeRightClick/unsubscribeRightClick`：持有三个 `Subscription`。
 
-对外接口：`GamePhase.onEnter/onExit`、`getInstance()`（`core/GameStateMachine` 注册）。
+对外接口：`GamePhase.onEnter/onExit`（`GameContext` 构造后交给 `core/GameStateMachine` 按状态注册）。
 本类**没有**对外暴露内部状态的 getter，后续任务通过 `MatchSessionState` 读状态。
 
 > 已知待办（t20）：`handlePlayerQuit` 的空服判定 `Bukkit.getOnlinePlayers().isEmpty()` 在 quit 事件触发时
@@ -68,7 +68,7 @@ DeploymentController / DeathHandler / BombInteractionController ─> PlayingItem
 
 ### 2. `phase/playing/MatchSessionState.java`（共享运行时状态）
 
-单例状态容器，**只存数据**。字段与访问器：
+本局共享运行时状态容器，**只存数据**（由 `GameContext` 构造并注入）。字段与访问器：
 
 | 字段 | 访问器 | 读写方 |
 |---|---|---|

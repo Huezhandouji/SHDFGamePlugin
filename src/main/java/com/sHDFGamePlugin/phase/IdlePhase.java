@@ -2,27 +2,28 @@ package com.sHDFGamePlugin.phase;
 
 import com.sHDFGamePlugin.core.GameContext;
 import com.sHDFGamePlugin.core.GameState;
-import com.sHDFGamePlugin.core.GameStateMachine;
 import com.sHDFGamePlugin.infrastructure.GameEventBus;
 import com.sHDFGamePlugin.infrastructure.event.ShdfPlayerJoinEvent;
 
-/** 空闲阶段：无玩家时驻留；首个玩家加入即转入 WAITING */
+/**
+ * 空闲阶段：无玩家时驻留；首个玩家加入即转入 WAITING。
+ * <p>
+ * 实例由 {@link GameContext} 创建并持有，本类没有静态单例。
+ */
 public class IdlePhase implements GamePhase{
 
-    private static final IdlePhase INSTANCE = new IdlePhase();
-
-    private IdlePhase(){}
-
-    public static IdlePhase getInstance(){
-        return INSTANCE;
-    }
+    private final GameContext ctx;
 
     private GameEventBus.Subscription joinSubscription;
+
+    public IdlePhase(GameContext ctx){
+        this.ctx = ctx;
+    }
 
     @Override
     public void onEnter() {
         joinSubscription = GameEventBus.subscribe(ShdfPlayerJoinEvent.class, event -> {
-            GameStateMachine.getInstance().transitionTo(GameState.WAITING);
+            ctx.getGameStateMachine().transitionTo(GameState.WAITING);
         });
     }
 

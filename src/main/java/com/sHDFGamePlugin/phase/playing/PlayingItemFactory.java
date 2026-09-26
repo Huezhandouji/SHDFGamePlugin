@@ -11,6 +11,7 @@ import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
 import net.kyori.adventure.text.format.TextDecoration;
 import org.bukkit.Material;
+import org.bukkit.NamespacedKey;
 import org.bukkit.entity.Player;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.ItemMeta;
@@ -37,6 +38,9 @@ import java.util.List;
  * 调用方：{@code PlayingPhase.onEnter/onExit}（注册/注销）、{@link DeploymentController}
  * （等待态与部署/重连时发放）、{@code PlayingPhase} 退出清理（{@link #clearInventoryKeepBattleMenu(Player)} 的
  * slot 8 例外口径）。
+ * <p>
+ * 实例由 {@link com.sHDFGamePlugin.core.GameContext} 创建并持有（不再有静态单例）；
+ * 指南针工厂与 GameItem 注册表在构造时注入。
  */
 public final class PlayingItemFactory {
 
@@ -58,12 +62,21 @@ public final class PlayingItemFactory {
      */
     public static final String COMPASS_ITEM_ID = CompassItemFactory.DEFAULT_ITEM_ID;
 
-    private static final PlayingItemFactory INSTANCE = new PlayingItemFactory();
+    private final CompassItemFactory compassFactory;
+    private final GameItemRegistry gameItemRegistry;
+    /** 物品 id 的 PDC 键（写入各类对局物品） */
+    private final NamespacedKey gameItemKey;
 
-    private PlayingItemFactory() {}
-
-    public static PlayingItemFactory getInstance() {
-        return INSTANCE;
+    /**
+     * @param compassFactory   slot 8 指南针的构建/注册工厂（与表现层桥接共用同一实例）
+     * @param gameItemRegistry GameItem 注册表（对局物品的注册/注销入口）
+     * @param gameItemKey      物品 id 的 PDC 键（由 {@code InteractionManager#gameItemKey()} 提供）
+     */
+    public PlayingItemFactory(CompassItemFactory compassFactory, GameItemRegistry gameItemRegistry,
+                              NamespacedKey gameItemKey) {
+        this.compassFactory = compassFactory;
+        this.gameItemRegistry = gameItemRegistry;
+        this.gameItemKey = gameItemKey;
     }
 
     /**
@@ -72,34 +85,34 @@ public final class PlayingItemFactory {
      * "左键切换指向 / 右键打开战斗菜单"，因此这里不再单独注册旧的战斗菜单物品。</p>
      */
     public void registerPlayingItems(){
-        GameItemRegistry.createAndRegister(PLANT_ITEM_ID, builder ->
+        gameItemRegistry.createAndRegister(PLANT_ITEM_ID, builder ->
                 builder.canDrop(false).canMove(false)
                         .rightClickHandler(event ->
                                 GameEventBus.publish(new RightClickGameItemEvent(event.getPlayer(), PLANT_ITEM_ID))));
-        GameItemRegistry.createAndRegister(DEFUSE_ITEM_ID, builder ->
+        gameItemRegistry.createAndRegister(DEFUSE_ITEM_ID, builder ->
                 builder.canDrop(false).canMove(false)
                         .rightClickHandler(event ->
                                 GameEventBus.publish(new RightClickGameItemEvent(event.getPlayer(), DEFUSE_ITEM_ID))));
-        //slot 8 指南针：注册在表现层桥接内（左键切换指向 + 右键发布 RightClickGameItemEvent）
-        MatchDisplayBridge.getInstance().displayService().compassFactory().register();
+        //slot 8 指南针：左键切换指向 + 右键发布 RightClickGameItemEvent（与表现层共用同一工厂实例）
+        compassFactory.register();
         //战斗菜单里的"切换角色"入口：点击（左键/Shift 左键）经库存点击事件交给 IntermissionController 处理
-        GameItemRegistry.createAndRegister(BATTLE_MENU_SWITCH_ROLE_ITEM_ID, builder ->
+        gameItemRegistry.createAndRegister(BATTLE_MENU_SWITCH_ROLE_ITEM_ID, builder ->
                 builder.canDrop(false).canMove(false)
                         .inventoryClickHandler(event ->
                                 GameEventBus.publish(new InventoryClickGameItemEvent(
                                         (Player) event.getWhoClicked(), BATTLE_MENU_SWITCH_ROLE_ITEM_ID))));
         //不可用态：只登记"不可丢弃/不可移动"，不挂点击回调——点击被忽略，也无法被玩家从菜单里拿走
-        GameItemRegistry.createAndRegister(BATTLE_MENU_SWITCH_ROLE_DISABLED_ITEM_ID, builder ->
+        gameItemRegistry.createAndRegister(BATTLE_MENU_SWITCH_ROLE_DISABLED_ITEM_ID, builder ->
                 builder.canDrop(false).canMove(false));
     }
 
     public void unregisterPlayingItems(){
-        GameItemRegistry.unregister(PLANT_ITEM_ID);
-        GameItemRegistry.unregister(DEFUSE_ITEM_ID);
+        gameItemRegistry.unregister(PLANT_ITEM_ID);
+        gameItemRegistry.unregister(DEFUSE_ITEM_ID);
         //slot 8 指南针（id 与 display 包同一常量）
-        GameItemRegistry.unregister(COMPASS_ITEM_ID);
-        GameItemRegistry.unregister(BATTLE_MENU_SWITCH_ROLE_ITEM_ID);
-        GameItemRegistry.unregister(BATTLE_MENU_SWITCH_ROLE_DISABLED_ITEM_ID);
+        gameItemRegistry.unregister(COMPASS_ITEM_ID);
+        gameItemRegistry.unregister(BATTLE_MENU_SWITCH_ROLE_ITEM_ID);
+        gameItemRegistry.unregister(BATTLE_MENU_SWITCH_ROLE_DISABLED_ITEM_ID);
     }
 
     /**
@@ -115,7 +128,7 @@ public final class PlayingItemFactory {
             ItemMeta barrierMeta = barrier.getItemMeta();
             barrierMeta.displayName(Component.text("切换角色（不可用）", NamedTextColor.RED, TextDecoration.BOLD));
             barrierMeta.lore(List.of(Component.text("仅在据点间歇期内可切换角色", NamedTextColor.GRAY)));
-            barrierMeta = GameItem.applyIdOnItemMeta(BATTLE_MENU_SWITCH_ROLE_DISABLED_ITEM_ID, barrierMeta);
+            barrierMeta = GameItem.applyIdOnItemMeta(gameItemKey, BATTLE_MENU_SWITCH_ROLE_DISABLED_ITEM_ID, barrierMeta);
             barrier.setItemMeta(barrierMeta);
             return barrier;
         }
@@ -126,7 +139,7 @@ public final class PlayingItemFactory {
         meta.lore(List.of(
                 Component.text("点击选择下次部署使用的角色", NamedTextColor.GRAY),
                 Component.text("间歇期结束后失效", NamedTextColor.DARK_GRAY)));
-        meta = GameItem.applyIdOnItemMeta(BATTLE_MENU_SWITCH_ROLE_ITEM_ID, meta);
+        meta = GameItem.applyIdOnItemMeta(gameItemKey, BATTLE_MENU_SWITCH_ROLE_ITEM_ID, meta);
         item.setItemMeta(meta);
         return item;
     }
@@ -147,7 +160,7 @@ public final class PlayingItemFactory {
      * 左键在当前据点各炸弹之间切换指向，右键打开战斗菜单。</p>
      */
     public void giveBattleMenuItem(Player player){
-        player.getInventory().setItem(8, MatchDisplayBridge.getInstance().createCompassItem());
+        player.getInventory().setItem(8, compassFactory.createItem(gameItemKey));
     }
 
     /** 清空玩家背包但保留 slot 8 的战斗指南针 */
@@ -164,7 +177,7 @@ public final class PlayingItemFactory {
         ItemMeta meta = item.getItemMeta();
         meta.displayName(Component.text("装弹装置", NamedTextColor.RED, TextDecoration.BOLD));
         meta.lore(List.of(Component.text("在炸弹范围内右键开始装弹", NamedTextColor.GRAY)));
-        meta = GameItem.applyIdOnItemMeta(PLANT_ITEM_ID, meta);
+        meta = GameItem.applyIdOnItemMeta(gameItemKey, PLANT_ITEM_ID, meta);
         item.setItemMeta(meta);
         return item;
     }
@@ -174,7 +187,7 @@ public final class PlayingItemFactory {
         ItemMeta meta = item.getItemMeta();
         meta.displayName(Component.text("拆弹工具", NamedTextColor.AQUA, TextDecoration.BOLD));
         meta.lore(List.of(Component.text("在炸弹范围内右键开始拆弹", NamedTextColor.GRAY)));
-        meta = GameItem.applyIdOnItemMeta(DEFUSE_ITEM_ID, meta);
+        meta = GameItem.applyIdOnItemMeta(gameItemKey, DEFUSE_ITEM_ID, meta);
         item.setItemMeta(meta);
         return item;
     }

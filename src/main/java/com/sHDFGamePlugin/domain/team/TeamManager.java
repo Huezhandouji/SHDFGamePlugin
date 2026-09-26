@@ -8,21 +8,17 @@ import java.util.*;
 import java.util.stream.Collectors;
 
 /**
- * 队伍管理（单例）：以 UUID 维护每个参战玩家的 {@link PlayerStatus}。
+ * 队伍管理：以 UUID 维护每个参战玩家的 {@link PlayerStatus}。
  * <p>
  * 提供阵营查询/切换、准备状态、人数统计、随机阵营自动分配等接口。
+ * <p>
+ * 实例由 {@link com.sHDFGamePlugin.core.GameContext} 创建并持有（不再有静态单例）。
  */
 public class TeamManager {
 
-    private static TeamManager instance = new TeamManager();
-
     private final Map<UUID, PlayerStatus> players = new HashMap<>();
 
-    private TeamManager() {}
-
-    public static TeamManager getInstance() {
-        return instance;
-    }
+    public TeamManager() {}
 
     public void reset(){
         players.clear();

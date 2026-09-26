@@ -1,34 +1,40 @@
 package com.sHDFGamePlugin.core;
 
-import com.sHDFGamePlugin.phase.*;
+import com.sHDFGamePlugin.phase.FinishedPhase;
+import com.sHDFGamePlugin.phase.GamePhase;
+import com.sHDFGamePlugin.phase.IdlePhase;
+import com.sHDFGamePlugin.phase.PlayingPhase;
+import com.sHDFGamePlugin.phase.RoleSelectingPhase;
+import com.sHDFGamePlugin.phase.WaitingPhase;
+import org.bukkit.plugin.java.JavaPlugin;
 
 import java.util.EnumMap;
 import java.util.Map;
 
 /**
- * 游戏状态机（单例）：管理 IDLE / WAITING / ROLE_SELECTING / PLAYING / FINISHED 的流转。
+ * 游戏状态机：管理 IDLE / WAITING / ROLE_SELECTING / PLAYING / FINISHED 的流转。
  * <p>
  * 每个 {@link GameState} 对应一个 {@link GamePhase}；切换状态时依次调用
  * 旧状态的 onExit 与新状态的 onEnter。
+ * <p>
+ * 阶段实例由 {@link GameContext} 创建后经构造函数注入，本类不持有任何静态实例。
  */
 public class GameStateMachine {
 
-    private static final GameStateMachine INSTANCE = new GameStateMachine();
+    private final JavaPlugin plugin;
+    private final Map<GameState, GamePhase> phases = new EnumMap<>(GameState.class);
 
     private GameState currentState;
-    private final Map<GameState, GamePhase> phases;
 
-    private GameStateMachine(){
-        phases = new EnumMap<>(GameState.class);
-        phases.put(GameState.IDLE, IdlePhase.getInstance());
-        phases.put(GameState.WAITING, WaitingPhase.getInstance());
-        phases.put(GameState.ROLE_SELECTING, RoleSelectingPhase.getInstance());
-        phases.put(GameState.PLAYING, PlayingPhase.getInstance());
-        phases.put(GameState.FINISHED, FinishedPhase.getInstance());
-    }
-
-    public static GameStateMachine getInstance(){
-        return INSTANCE;
+    public GameStateMachine(JavaPlugin plugin, IdlePhase idlePhase, WaitingPhase waitingPhase,
+                            RoleSelectingPhase roleSelectingPhase, PlayingPhase playingPhase,
+                            FinishedPhase finishedPhase) {
+        this.plugin = plugin;
+        this.phases.put(GameState.IDLE, idlePhase);
+        this.phases.put(GameState.WAITING, waitingPhase);
+        this.phases.put(GameState.ROLE_SELECTING, roleSelectingPhase);
+        this.phases.put(GameState.PLAYING, playingPhase);
+        this.phases.put(GameState.FINISHED, finishedPhase);
     }
 
     public void start(){
@@ -57,7 +63,7 @@ public class GameStateMachine {
         if(currentState == newState) return;
 
         if(currentState != null){
-            GameContext.getInstance().getPlugin().getLogger().info("退出状态: " + currentState.name());
+            plugin.getLogger().info("退出状态: " + currentState.name());
             GamePhase currentPhase = phases.get(currentState);
             if(currentPhase != null){
                 currentPhase.onExit();
@@ -67,17 +73,17 @@ public class GameStateMachine {
         //当前状态先更新：onExit 的重入性切换与 onEnter 内的状态判断都以新状态为准
         currentState = newState;
         try{
-            GameContext.getInstance().getPlugin().getLogger().info("进入状态: " + newState.name());
+            plugin.getLogger().info("进入状态: " + newState.name());
             GamePhase newPhase = phases.get(newState);
             if(newPhase == null){
-                GameContext.getInstance().getPlugin().getLogger().severe("状态 " + newState.name() + " 没有对应的阶段实现, 无法调用 onEnter!");
+                plugin.getLogger().severe("状态 " + newState.name() + " 没有对应的阶段实现, 无法调用 onEnter!");
                 return;
             }
             newPhase.onEnter();
         }
         catch (Throwable t){
             //记录日志后继续向上抛出：不静默吞异常
-            GameContext.getInstance().getPlugin().getLogger().severe("进入状态 " + newState.name() + " 时 onEnter 抛出异常: " + t);
+            plugin.getLogger().severe("进入状态 " + newState.name() + " 时 onEnter 抛出异常: " + t);
             t.printStackTrace();
             throw t;
         }
@@ -90,9 +96,17 @@ public class GameStateMachine {
         return currentState;
     }
 
+    /** 按状态取阶段实现；未注册的状态返回 null */
+    public GamePhase getPhase(GameState state){
+        return phases.get(state);
+    }
+
     public void shutdown(){
         if(currentState != null){
-            phases.get(currentState).onExit();
+            GamePhase phase = phases.get(currentState);
+            if(phase != null){
+                phase.onExit();
+            }
         }
     }
 }

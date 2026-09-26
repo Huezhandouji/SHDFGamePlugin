@@ -12,7 +12,13 @@
 ## 二、代码风格 / 结构约定
 
 - 分层：phase 驱动，domain 纯规则，infrastructure 实现；事件解耦用 `GameEventBus`。
-- 阶段类为单例，`onEnter` 注册、`onExit` 清理（订阅/倒计时/GUI/快捷栏）。
+- 阶段类由 `GameContext` 构造并注入（**非单例**），`onEnter` 注册、`onExit` 清理（订阅/倒计时/GUI/快捷栏）。
+- **禁止静态单例**：任何需要插件实例/世界/玩家/调度任务的组件都必须是实例，由 `GameContext`
+  在其构造函数里创建并持有。插件禁用时 `SHDFGamePlugin#onDisable` 调 `GameContext#shutdown()` 并置空引用，
+  整个对象图随之可回收——这是"插件禁用后不残留静态引用（内存泄漏）"的保证。
+  另有意的静态例外：`GameEventBus`（静态发布订阅总线，订阅者在自己 onExit 退订）、
+  `MessageUtil` / `SoundUtil` / `ParticleUtil`（无状态工具）、`ChestGui.OPEN_GUIS`（已打开 GUI 注册表，
+  `shutdown()` 里清空）。
 - GameItem id 采用**阶段前缀**风格：`gameItem_<phase>_…`（如 `gameItem_roleSelectingPhase_…`）。
 - **三元表达式已改为 if/else**（可读性）；新增代码建议保持 if 风格。
 - 文字消息统一走 `MessageUtil`（`SHDF>>` 前缀）。
